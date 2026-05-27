@@ -3,7 +3,7 @@
  * FILE: AccessibilityUtil.js
  */
 Ext.define("LeankorApp.util.AccessibilityUtil", {
-	singleton : true,
+    singleton : true,
 
 	init : function () {
 		if (this.leankorAccessibilityUtilInitialized) {
@@ -11,7 +11,130 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		}
 
 		this.leankorAccessibilityUtilInitialized = true;
+		this.createLiveRegion();
+		this.createLiveRegion(true);
+		this.patchNavigationModelEnter();
 		this.installGlobalEscapeHandler();
+		this.installGridHeaderFocusGuard();
+	},
+
+	patchNavigationModelEnter : function () {
+		Ext.Array.forEach(
+			[
+				"Ext.view.NavigationModel",
+				"Ext.grid.NavigationModel",
+				"Ext.tree.NavigationModel"
+			],
+			function (name) {
+				var NM = Ext.ClassManager.get(name);
+
+				if (!NM || !NM.prototype || !NM.prototype.onKeyEnter) {
+					return;
+				}
+				if (NM.prototype.leankorOnKeyEnterPatched) {
+					return;
+				}
+
+				NM.prototype.leankorOnKeyEnterPatched = true;
+				Ext.override(NM, {
+					onKeyEnter : function (keyEvent) {
+						var position = keyEvent && keyEvent.position,
+							view = (position && position.view) || this.view;
+
+						if (!view || view.destroyed) {
+							return;
+						}
+
+						try {
+							return this.callParent(arguments);
+						} catch (ignore) {
+							return;
+						}
+					}
+				});
+			}
+		);
+	},
+
+	installGridHeaderFocusGuard : function () {
+		var me = this;
+
+		if (this.leankorGridHeaderFocusGuardInstalled) {
+			return;
+		}
+
+		this.leankorGridHeaderFocusGuardInstalled = true;
+
+		if (Ext.grid && Ext.grid.column && Ext.grid.column.Column) {
+			Ext.override(Ext.grid.column.Column, {
+				tabIndex : -1,
+
+				afterRender : function () {
+					this.callParent(arguments);
+					me.disableGridHeaderTabStop(this);
+				},
+
+				afterComponentLayout : function () {
+					this.callParent(arguments);
+					me.disableGridHeaderTabStop(this);
+				}
+			});
+		}
+
+		if (Ext.grid && Ext.grid.header && Ext.grid.header.Container) {
+			Ext.override(Ext.grid.header.Container, {
+				initComponent : function () {
+					this.callParent(arguments);
+
+					if (this.isRootHeader) {
+						this.focusableContainer = false;
+						this.activateFocusableContainer = false;
+					}
+				},
+
+				afterRender : function () {
+					this.callParent(arguments);
+					me.disableGridHeaderContainerTabStops(this);
+				},
+
+				afterComponentLayout : function () {
+					this.callParent(arguments);
+					me.disableGridHeaderContainerTabStops(this);
+				}
+			});
+		}
+	},
+
+	disableGridHeaderContainerTabStops : function (headerCt) {
+		var me = this,
+			columns;
+
+		if (!headerCt || !headerCt.rendered || !headerCt.getGridColumns) {
+			return;
+		}
+
+		columns = headerCt.getGridColumns();
+		Ext.Array.forEach(columns, function (column) {
+			me.disableGridHeaderTabStop(column);
+		});
+	},
+
+	disableGridHeaderTabStop : function (column) {
+		var el = column && column.el;
+
+		if (!el || !el.dom) {
+			return;
+		}
+
+		el.dom.setAttribute("tabindex", "-1");
+		el.removeCls("x-column-header-focus");
+		el
+			.select(
+				".x-column-header-inner, .x-column-header-text, .x-column-header-text-container, .x-column-header-text-wrapper, .x-column-header-title"
+			)
+			.each(function (innerEl) {
+				innerEl.dom.setAttribute("tabindex", "-1");
+			});
 	},
 
 	installGlobalEscapeHandler : function () {
@@ -96,6 +219,75 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		);
 	},
 
+	createLiveRegion : function (assertive) {
+		var id = assertive ? "cp-a11y-live-region-assertive" : "cp-a11y-live-region",
+			el = document.getElementById(id);
+
+		if (el) {
+			return el;
+		}
+
+		el = document.createElement("div");
+		el.id = id;
+		el.setAttribute("role", assertive ? "alert" : "status");
+		el.setAttribute("aria-live", assertive ? "assertive" : "polite");
+		el.setAttribute("aria-atomic", "true");
+		el.className = "sr-only";
+		document.body.appendChild(el);
+
+		return el;
+	},
+
+	announce : function (text) {
+		var me = this,
+			el;
+
+		if (!text) {
+			return;
+		}
+
+		el = me.createLiveRegion();
+		clearTimeout(me.announceTimer);
+		clearTimeout(me.announceClearTimer);
+		el.textContent = "";
+		me.announceTimer = setTimeout(function () {
+			el.textContent = text;
+			me.announceClearTimer = setTimeout(function () {
+				el.textContent = "";
+			}, 4000);
+		}, 80);
+	},
+
+	setBusy : function (target, busy) {
+		var dom,
+			localeName = typeof Locale !== "undefined" && Locale.LocaleName;
+
+		if (!target) {
+			return;
+		}
+
+		if (target.nodeType === 1) {
+			dom = target;
+		} else if (target.el && target.el.dom) {
+			dom = target.el.dom;
+		} else if (target.getEl && target.getEl()) {
+			dom = target.getEl().dom;
+		}
+
+		if (!dom) {
+			return;
+		}
+
+		if (busy) {
+			dom.setAttribute("aria-busy", "true");
+			this.announce((localeName && localeName.PleaseWait) || "Loading");
+		} else {
+			dom.removeAttribute("aria-busy");
+			this.announce((localeName && localeName.A11yLoadingComplete) ||
+				"Loading complete");
+		}
+	},
+
 	wireComboAria : function (combo) {
 		if (!combo || combo.leankorComboAriaWired) {
 			return;
@@ -131,46 +323,97 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				}
 			});
 
-			var onEnterExpand = function (e) {
-				if (!e || e.getKey() !== e.ENTER) {
+			if (!combo.el || !combo.el.dom || combo.el.dom.leankorComboEnterBound) {
 					return;
 				}
 
-				var pickerVisible =
+			combo.el.dom.leankorComboEnterBound = true;
+			combo.el.dom.addEventListener("keydown", function (e) {
+				var pickerVisible,
+					stopAndReset,
+					navigationModel,
+					selectionModel,
+					before,
+					extEvent;
+
+				if (
+					e.keyCode === 32 &&
+					combo.picker &&
+					Ext.isFunction(combo.picker.isVisible) &&
+					combo.picker.isVisible()) {
+					navigationModel =
+						combo.picker.getNavigationModel &&
+						combo.picker.getNavigationModel();
+					if (navigationModel && Ext.isFunction(navigationModel.selectHighlighted)) {
+						e.preventDefault();
+						e.stopPropagation();
+						if (e.stopImmediatePropagation) {
+							e.stopImmediatePropagation();
+						}
+						extEvent = {
+							getKey: function () {
+								return 13;
+							},
+							stopEvent: Ext.emptyFn,
+							ENTER: 13,
+							keyCode: 13,
+							target: e.target,
+							type: e.type,
+							ctrlKey: e.ctrlKey,
+							shiftKey: e.shiftKey,
+							altKey: e.altKey,
+							metaKey: e.metaKey,
+							button: 0,
+							browserEvent: e
+						};
+						selectionModel =
+							combo.picker.getSelectionModel &&
+							combo.picker.getSelectionModel();
+						before = selectionModel ? selectionModel.getCount() : 0;
+						navigationModel.selectHighlighted(extEvent);
+						if (
+							!combo.multiSelect &&
+							selectionModel &&
+							before === selectionModel.getCount() &&
+							Ext.isFunction(combo.collapse)) {
+							combo.collapse();
+						}
+					}
+					return;
+				}
+
+				if (e.keyCode !== 13) {
+					return;
+				}
+
+				stopAndReset = function () {
+					e.preventDefault();
+					e.stopPropagation();
+					if (e.stopImmediatePropagation) {
+						e.stopImmediatePropagation();
+					}
+					combo.isExpanded = false;
+				};
+
+				if (!combo.displayField) {
+					stopAndReset();
+					combo.fireEvent("expand", combo);
+					return;
+				}
+
+				pickerVisible =
 					combo.picker &&
 					Ext.isFunction(combo.picker.isVisible) &&
 					combo.picker.isVisible();
-
 				if (pickerVisible) {
 					return;
 				}
 
-				e.stopEvent();
-
-				var trigger = Ext.isFunction(combo.getPickerTrigger)
-					? combo.getPickerTrigger()
-					: null;
-
-				if (trigger && trigger.el && trigger.el.dom) {
-					trigger.el.dom.click();
-					return;
-				}
-
-				combo.isExpanded = false;
-				if (Ext.isFunction(combo.onTriggerClick)) {
-					combo.onTriggerClick(combo, null, e);
-				} else if (Ext.isFunction(combo.expand)) {
+				stopAndReset();
+				if (Ext.isFunction(combo.expand)) {
 					combo.expand();
 				}
-			};
-
-			combo.on("keydown", onEnterExpand);
-			if (combo.inputEl) {
-				combo.inputEl.on("keydown", onEnterExpand);
-			}
-			if (combo.el) {
-				combo.el.on("keydown", onEnterExpand);
-			}
+			}, true);
 		};
 
 		if (combo.rendered) {
@@ -328,6 +571,807 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 			me.closeComponent(cmp, e, target);
 			return false;
 		});
+	},
+
+	setAriaModal : function (panel) {
+		if (!panel) {
+			return;
+		}
+
+		var apply = function () {
+			var ariaDom = (panel.ariaEl && panel.ariaEl.dom) || (panel.el && panel.el.dom),
+				titleCmp = panel.header && panel.header.titleCmp,
+				titleEl = titleCmp && titleCmp.el && titleCmp.el.dom;
+
+			if (!ariaDom) {
+				return;
+			}
+
+			ariaDom.setAttribute("role", "dialog");
+			ariaDom.setAttribute("aria-modal", "true");
+			if (titleEl) {
+				if (!titleEl.id) {
+					titleEl.id = "a11y-title-" + Ext.id();
+				}
+				ariaDom.setAttribute("aria-labelledby", titleEl.id);
+			}
+		};
+
+		if (panel.rendered) {
+			apply();
+		} else {
+			panel.on("afterrender", apply, null, { single : true });
+		}
+	},
+
+	restoreFocus : function () {
+		var el = this._capturedFocus;
+
+		this._capturedFocus = null;
+		if (el && Ext.isFunction(el.focus) && document.body.contains(el)) {
+			el.focus();
+		}
+	},
+
+	constrainToViewport : function (cmp) {
+		if (!cmp || !cmp.el || !cmp.el.dom) {
+			return;
+		}
+
+		var x = cmp.getX ? cmp.getX() : cmp.el.getX(),
+			y = cmp.getY ? cmp.getY() : cmp.el.getY(),
+			w = cmp.el.getWidth(),
+			h = cmp.el.getHeight(),
+			vw = window.innerWidth,
+			vh = window.innerHeight,
+			sx = window.pageXOffset || 0,
+			sy = window.pageYOffset || 0,
+			nextX = x,
+			nextY = y;
+
+		if (nextX + w > sx + vw) {
+			nextX = sx + vw - w - 10;
+		}
+		if (nextX < sx + 10) {
+			nextX = sx + 10;
+		}
+		if (nextY + h > sy + vh) {
+			nextY = sy + vh - h - 10;
+		}
+		if (nextY < sy + 10) {
+			nextY = sy + 10;
+		}
+
+		if (cmp.setPosition) {
+			cmp.setPosition(nextX, nextY);
+		} else {
+			cmp.el.setXY([nextX, nextY]);
+		}
+	},
+
+	decoratePopup : function (popup) {
+		if (!popup || popup._wcagDecorated) {
+			return;
+		}
+
+		popup._wcagDecorated = true;
+		var me = this,
+			apply = function () {
+				var maxH = Math.floor(window.innerHeight * 0.9);
+
+				if (popup.getHeight && popup.getHeight() > maxH) {
+					popup.setMaxHeight(maxH);
+				}
+				me.constrainToViewport(popup);
+			},
+			resizeHandler = function () {
+				if (popup.isVisible && popup.isVisible()) {
+					apply();
+				}
+			};
+
+		popup.on("show", apply);
+		window.addEventListener("resize", resizeHandler);
+		popup.on("destroy", function () {
+			window.removeEventListener("resize", resizeHandler);
+		});
+	},
+
+	bootReflowOverrides : function () {
+		var util = this,
+			isInIframe = window !== window.parent,
+			outerHint = !isInIframe && window.outerWidth > 0 ? window.outerWidth - 16 : 0,
+			minViewportWidth = Math.max(window.innerWidth, outerHint, 1024),
+			updateZoomOverflow;
+
+		LeankorApp.wcagConstrainToViewport = function (win) {
+			util.constrainToViewport(win);
+		};
+
+		if (!Ext.Element._wcagViewportWidthApplied) {
+			Ext.Element._wcagViewportWidthApplied = true;
+			Ext.Element._wcagOrigGetViewportWidth = Ext.Element.getViewportWidth;
+			Ext.Element.getViewportWidth = function () {
+				return Math.max(
+					Ext.Element._wcagOrigGetViewportWidth.call(this),
+					minViewportWidth
+				);
+			};
+		}
+
+		document.documentElement.style.setProperty(
+			"--min-viewport-width",
+			minViewportWidth + "px"
+		);
+
+		updateZoomOverflow = function () {
+			var cl = document.documentElement.classList;
+
+			if (window.innerWidth < minViewportWidth) {
+				cl.add("x-zoom-overflow");
+			} else {
+				cl.remove("x-zoom-overflow");
+			}
+		};
+		window.addEventListener("resize", updateZoomOverflow);
+		updateZoomOverflow();
+
+		if (!Ext.window.Window._wcagVerticalApplied) {
+			Ext.window.Window._wcagVerticalApplied = true;
+			Ext.override(Ext.window.Window, {
+				afterRender : function () {
+					this.callParent(arguments);
+
+					if (
+						this.el &&
+						(this.el.hasCls("taskEditorPluginCls") ||
+							this.el.hasCls("taskEditorCls"))
+					) {
+						return;
+					}
+
+					var win = this,
+						fit = function () {
+							if (!document.documentElement.classList.contains("x-zoom-overflow")) {
+								return;
+							}
+
+							var vh = window.innerHeight,
+								vw = window.innerWidth;
+
+							if (win.getHeight() > vh) {
+								win.setMaxHeight(vh);
+							}
+							if (win.getWidth() > vw) {
+								win.setMaxWidth(vw);
+							}
+							util.constrainToViewport(win);
+						},
+						resizeHandler = function () {
+							fit();
+						};
+
+					fit();
+					win.on("show", fit);
+					window.addEventListener("resize", resizeHandler);
+					win.on("destroy", function () {
+						window.removeEventListener("resize", resizeHandler);
+					});
+				}
+			});
+
+			Ext.override(Ext.menu.Menu, {
+				onShow : function () {
+					this.callParent(arguments);
+					if (!document.documentElement.classList.contains("x-zoom-overflow")) {
+						return;
+					}
+
+					var vh = window.innerHeight,
+						maxH = Math.floor(vh * 0.9),
+						pos;
+
+					if (this.getHeight() > maxH) {
+						this.setMaxHeight(maxH);
+					}
+					pos = this.getPosition();
+					if (pos[1] + this.getHeight() > vh) {
+						this.setPosition(pos[0], Math.max(0, vh - this.getHeight()));
+					}
+				}
+			});
+		}
+
+		if (!Ext.AbstractComponent._wcagSetLoadingApplied) {
+			Ext.AbstractComponent._wcagSetLoadingApplied = true;
+			Ext.override(Ext.AbstractComponent, {
+				setLoading : function (load) {
+					var ret = this.callParent(arguments);
+
+					util.setBusy(this, load !== false && load != null);
+					return ret;
+				}
+			});
+		}
+	},
+
+	insertSkipLink : function (mainPanel) {
+		var localeName = typeof Locale !== "undefined" && Locale.LocaleName,
+			panelLabel = this.getPanelLabel && this.getPanelLabel(mainPanel),
+			link;
+
+		if (document.querySelector(".skip-link[data-cp-skip]")) {
+			return;
+		}
+
+		link = document.createElement("a");
+		link.href = "#";
+		link.className = "skip-link";
+		link.textContent =
+			(localeName && localeName.A11ySkipToMain) || "Skip to main content";
+		link.setAttribute("data-cp-skip", "true");
+		link.addEventListener("click", function (e) {
+			var dom;
+
+			e.preventDefault();
+			if (!mainPanel || !mainPanel.body || !mainPanel.body.dom) {
+				return;
+			}
+
+			dom = mainPanel.body.dom;
+			if (!dom.hasAttribute("tabindex")) {
+				dom.setAttribute("tabindex", "-1");
+			}
+			dom.setAttribute("role", "region");
+			if (panelLabel) {
+				dom.setAttribute("aria-label", panelLabel);
+			}
+			dom.focus();
+		});
+		document.body.insertBefore(link, document.body.firstChild);
+	},
+
+	initPopupKeyboardNav : function (popup, opener, opts) {
+		if (!popup || popup._popupKbInited) {
+			return;
+		}
+
+		opts = opts || {};
+		popup._popupKbInited = true;
+		var me = this;
+		popup._a11yOpener = opener || document.activeElement;
+
+		var collectFocusables = function () {
+			var list = [],
+				filterField,
+				view,
+				viewDom,
+				closeTool;
+
+			if (!popup.el || !popup.el.dom) {
+				return list;
+			}
+
+			filterField = popup.down("textfield");
+			if (filterField && filterField.inputEl && filterField.isVisible(true)) {
+				list.push(filterField.inputEl.dom);
+			}
+
+			view = Ext.isFunction(popup.getView) ? popup.getView() : null;
+			if (view && view.el && view.el.dom) {
+				viewDom = view.el.dom;
+				if (!viewDom.hasAttribute("tabindex")) {
+					viewDom.setAttribute("tabindex", "0");
+				}
+				list.push(viewDom);
+			}
+
+			Ext.Array.forEach(popup.query("toolbar button"), function (btn) {
+				if (btn.el && btn.el.dom && !btn.disabled && btn.isVisible(true)) {
+					list.push(btn.el.dom);
+				}
+			});
+
+			closeTool = popup.down("tool[type=close]");
+			if (closeTool && closeTool.el && closeTool.el.dom) {
+				list.push(closeTool.el.dom);
+			}
+
+			return list;
+		};
+
+		var focusFirstRow = function () {
+			var view = Ext.isFunction(popup.getView) ? popup.getView() : null,
+				store = view && view.getStore && view.getStore(),
+				firstRec = store && store.getCount && store.getCount() ? store.getAt(0) : null,
+				node = firstRec && view.getNode && view.getNode(firstRec),
+				sm = popup.getSelectionModel && popup.getSelectionModel();
+
+			if (!node) {
+				return false;
+			}
+
+			if (!node.hasAttribute("tabindex")) {
+				node.setAttribute("tabindex", "0");
+			}
+			node.focus();
+			if (sm) {
+				sm.select(firstRec);
+			}
+			return true;
+		};
+
+		var onShow = function () {
+			me.setAriaModal(popup);
+			me.initCloseToolAccessibility(popup, false);
+			Ext.defer(function () {
+				var focusables = collectFocusables(),
+					view = Ext.isFunction(popup.getView) ? popup.getView() : null,
+					store,
+					listener;
+
+				if (!focusables.length || !focusables[0]) {
+					return;
+				}
+
+				focusables[0].focus();
+				if (!view || !view.el || view.el.dom !== focusables[0]) {
+					return;
+				}
+
+				store = view.getStore && view.getStore();
+				if (!store || focusFirstRow()) {
+					return;
+				}
+
+				listener = function () {
+					if (focusFirstRow()) {
+						store.un("refresh", listener);
+						store.un("datachanged", listener);
+						store.un("load", listener);
+					}
+				};
+				store.on("refresh", listener);
+				store.on("datachanged", listener);
+				store.on("load", listener);
+				popup.on("close", function () {
+					store.un("refresh", listener);
+					store.un("datachanged", listener);
+					store.un("load", listener);
+				}, null, { single : true });
+			}, 150);
+		};
+
+		var restoreOpenerFocus = function () {
+			var openerTarget = popup._a11yOpener;
+
+			if (
+				openerTarget &&
+				openerTarget.isComponent &&
+				!openerTarget.destroyed &&
+				(openerTarget.xtype === "combobox" || openerTarget.xtype === "combo")) {
+				openerTarget.isExpanded = false;
+				if (
+					openerTarget.picker &&
+					Ext.isFunction(openerTarget.picker.hide) &&
+					Ext.isFunction(openerTarget.picker.isVisible) &&
+					openerTarget.picker.isVisible()) {
+					openerTarget.picker.hide();
+				}
+			}
+
+			Ext.defer(function () {
+				try {
+					if (!openerTarget) {
+						return;
+					}
+					if (openerTarget.isComponent) {
+						if (!openerTarget.destroyed && Ext.isFunction(openerTarget.focus)) {
+							openerTarget.focus();
+						}
+					} else if (Ext.isFunction(openerTarget.focus) && document.body.contains(openerTarget)) {
+						openerTarget.focus();
+					}
+				} catch (ignore) {}
+			}, 50);
+		};
+
+		var wireTabTrap = function () {
+			if (!popup.el || !popup.el.dom || popup.el.dom._popupTabTrapBound) {
+				return;
+			}
+
+			popup.el.dom._popupTabTrapBound = true;
+			popup.el.dom.addEventListener("keydown", function (e) {
+				var focusables,
+					active,
+					idx,
+					next,
+					i,
+					view,
+					activeRow,
+					nextRow,
+					nextRecord,
+					selectionModel;
+
+				if (e.keyCode !== 9) {
+					return;
+				}
+
+				if (opts.tabNavigatesRows) {
+					view = Ext.isFunction(popup.getView) ? popup.getView() : null;
+					if (view && view.el && view.el.dom) {
+						active = document.activeElement;
+						activeRow = active && active.closest && active.closest(".x-grid-item");
+						if (activeRow && view.el.dom.contains(activeRow)) {
+							nextRow = e.shiftKey ?
+								activeRow.previousElementSibling :
+								activeRow.nextElementSibling;
+							if (nextRow) {
+								nextRecord = view.getRecord && view.getRecord(nextRow);
+								selectionModel = popup.getSelectionModel && popup.getSelectionModel();
+								e.preventDefault();
+								e.stopPropagation();
+								if (selectionModel && nextRecord) {
+									selectionModel.select(nextRecord);
+								}
+								view.el.select(".lk-popup-row-focused").removeCls("lk-popup-row-focused");
+								Ext.fly(nextRow).addCls("lk-popup-row-focused");
+								if (!nextRow.hasAttribute("tabindex")) {
+									nextRow.setAttribute("tabindex", "0");
+								}
+								nextRow.focus();
+								return;
+							}
+						}
+					}
+				}
+
+				focusables = collectFocusables();
+				if (!focusables.length) {
+					return;
+				}
+
+				active = document.activeElement;
+				idx = focusables.indexOf(active);
+				if (idx === -1) {
+					for (i = 0; i < focusables.length; i++) {
+						if (focusables[i].contains && focusables[i].contains(active)) {
+							idx = i;
+							break;
+						}
+					}
+				}
+				if (idx === -1) {
+					return;
+				}
+
+				next = e.shiftKey ? idx - 1 : idx + 1;
+				if (next < 0) {
+					next = focusables.length - 1;
+				}
+				if (next >= focusables.length) {
+					next = 0;
+				}
+				e.preventDefault();
+				e.stopPropagation();
+				focusables[next].focus();
+			}, true);
+		};
+
+		var wirePopupAnnouncements = function () {
+			var liveRegion = document.getElementById("rm-a11y-popup-region"),
+				view,
+				viewDomRef,
+				sm,
+				lastSelectionKey = null,
+				announceTimer = null,
+				clearTimer = null;
+
+			if (popup._popupAnnouncementsBound) {
+				return;
+			}
+			popup._popupAnnouncementsBound = true;
+
+			if (!liveRegion) {
+				liveRegion = document.createElement("div");
+				liveRegion.id = "rm-a11y-popup-region";
+				liveRegion.setAttribute("role", "status");
+				liveRegion.setAttribute("aria-live", "polite");
+				liveRegion.setAttribute("aria-atomic", "true");
+				liveRegion.style.cssText =
+					"position:absolute;width:1px;height:1px;overflow:hidden;left:-10000px;clip:rect(0 0 0 0);";
+				document.body.appendChild(liveRegion);
+			}
+
+			var getRecord = function () {
+				var selectionModel = popup.getSelectionModel && popup.getSelectionModel(),
+					selection = selectionModel && selectionModel.getSelection && selectionModel.getSelection(),
+					rec = selection && selection[0],
+					popupView,
+					store;
+
+				if (rec) {
+					return rec;
+				}
+
+				popupView = popup.getView && popup.getView();
+				store = popupView && popupView.getStore && popupView.getStore();
+				return store && store.getCount && store.getCount() ? store.getAt(0) : null;
+			};
+
+			var speak = function (rec) {
+				var popupView = popup.getView && popup.getView(),
+					store = popupView && popupView.getStore && popupView.getStore(),
+					name,
+					index;
+
+				if (!rec || !rec.get || !store || popup.destroyed) {
+					return false;
+				}
+
+				name = rec.get("Name") || rec.get("name") || rec.get("text") || "";
+				if (!name) {
+					return false;
+				}
+
+				index = store.indexOf(rec);
+				if (announceTimer) {
+					window.clearTimeout(announceTimer);
+				}
+				if (clearTimer) {
+					window.clearTimeout(clearTimer);
+				}
+				liveRegion.textContent = "";
+				announceTimer = window.setTimeout(function () {
+					if (popup.destroyed) {
+						return;
+					}
+					liveRegion.textContent =
+						me.cleanAriaText(name) + ", " + (index + 1) + " of " + store.getCount();
+					clearTimer = window.setTimeout(function () {
+						if (!popup.destroyed) {
+							liveRegion.textContent = "";
+						}
+					}, 4000);
+				}, 120);
+				return true;
+			};
+
+			var announceCurrent = function (delay) {
+				Ext.defer(function () {
+					speak(getRecord());
+				}, delay || 120);
+			};
+
+			popup.on("show", function () {
+				announceCurrent(600);
+			});
+			popup.on("destroy", function () {
+				if (announceTimer) {
+					window.clearTimeout(announceTimer);
+				}
+				if (clearTimer) {
+					window.clearTimeout(clearTimer);
+				}
+			});
+			if (popup.isVisible && popup.isVisible()) {
+				announceCurrent(600);
+			}
+
+			view = popup.getView && popup.getView();
+			viewDomRef = view && view.el && view.el.dom;
+			if (viewDomRef) {
+				viewDomRef.addEventListener("focus", function () {
+					announceCurrent(120);
+				});
+			}
+
+			sm = popup.getSelectionModel && popup.getSelectionModel();
+			if (sm && sm.on) {
+				sm.on("selectionchange", function () {
+					Ext.defer(function () {
+						var rec = getRecord(),
+							key = rec && (rec.id || (rec.get && (rec.get("Id") || rec.get("name") || rec.get("Name"))));
+
+						if (!rec || key === lastSelectionKey) {
+							return;
+						}
+						lastSelectionKey = key;
+						speak(rec);
+					}, 100);
+				});
+			}
+		};
+
+		popup.on("show", onShow);
+		popup.on("hide", restoreOpenerFocus);
+		popup.on("close", restoreOpenerFocus);
+		if (popup.isVisible && popup.isVisible()) {
+			onShow();
+		}
+
+		if (popup.rendered) {
+			wireTabTrap();
+			wirePopupAnnouncements();
+		} else {
+			popup.on("afterrender", wireTabTrap, null, { single : true });
+			popup.on("afterrender", wirePopupAnnouncements, null, { single : true });
+		}
+
+		this.bindEscapeToClose(popup);
+	},
+
+	wireTreeKeyboardNav : function (treePanel, opts) {
+		if (!treePanel || treePanel._treeKbInited) {
+			return;
+		}
+
+		treePanel._treeKbInited = true;
+		opts = opts || {};
+
+		var expand = function (rec) {
+				if (Ext.isFunction(opts.beforeExpand)) {
+					opts.beforeExpand(rec, function () {
+						rec.expand();
+					});
+				} else {
+					rec.expand();
+				}
+			},
+			ready = function () {
+				var view = treePanel.getView && treePanel.getView();
+
+				if (!view || !view.el || !view.el.dom) {
+					return;
+				}
+
+				var resolveRec = function () {
+						var sm = treePanel.getSelectionModel && treePanel.getSelectionModel(),
+							rec = sm && sm.getSelection && sm.getSelection()[0],
+							el;
+
+						if (rec) {
+							return rec;
+						}
+
+						el = document.activeElement;
+						while (el && el !== view.el.dom) {
+							rec = view.getRecord && view.getRecord(el);
+							if (rec) {
+								return rec;
+							}
+							el = el.parentNode;
+						}
+						return null;
+					},
+					focusRecord = function (record, delay) {
+						Ext.defer(function () {
+							var node = view.getNode && view.getNode(record),
+								sm = treePanel.getSelectionModel && treePanel.getSelectionModel();
+
+							if (!node || treePanel.destroyed || treePanel.isDestroyed) {
+								return;
+							}
+							if (sm) {
+								sm.select(record);
+							}
+							view.el.select(".lk-popup-row-focused").removeCls("lk-popup-row-focused");
+							Ext.fly(node).addCls("lk-popup-row-focused");
+							if (!node.hasAttribute("tabindex")) {
+								node.setAttribute("tabindex", "0");
+							}
+							node.focus();
+						}, delay || 30);
+					},
+					navigateSibling = function (currentRec, direction) {
+						var node = view.getNode && view.getNode(currentRec),
+							sibling,
+							siblingRec,
+							sm;
+
+						if (!node) {
+							return;
+						}
+
+						sibling = direction === "next" ?
+							node.nextElementSibling :
+							node.previousElementSibling;
+						if (!sibling) {
+							return;
+						}
+
+						siblingRec = view.getRecord && view.getRecord(sibling);
+						if (!siblingRec) {
+							return;
+						}
+
+						sm = treePanel.getSelectionModel && treePanel.getSelectionModel();
+						if (sm) {
+							sm.select(siblingRec);
+						}
+						view.el.select(".lk-popup-row-focused").removeCls("lk-popup-row-focused");
+						Ext.fly(sibling).addCls("lk-popup-row-focused");
+						if (!sibling.hasAttribute("tabindex")) {
+							sibling.setAttribute("tabindex", "0");
+						}
+						sibling.focus();
+					};
+
+				treePanel.on("itemexpand", focusRecord);
+				treePanel.on("itemcollapse", focusRecord);
+				treePanel.on("beforedestroy", function () {
+					treePanel.un("itemexpand", focusRecord);
+					treePanel.un("itemcollapse", focusRecord);
+				});
+
+				view.el.dom.addEventListener("keydown", function (e) {
+					var key = e.keyCode,
+						rec = resolveRec(),
+						isLeaf,
+						isExpanded;
+
+					if (key === 13 && (Ext.isFunction(opts.onActivate) || opts.enterTogglesFolder)) {
+						e.preventDefault();
+						e.stopPropagation();
+						if (e.stopImmediatePropagation) {
+							e.stopImmediatePropagation();
+						}
+						if (Ext.isFunction(opts.onActivate) && rec) {
+							opts.onActivate(rec);
+						}
+						if (opts.enterTogglesFolder && rec) {
+							isLeaf = Ext.isFunction(rec.isLeaf) ? rec.isLeaf() : true;
+							isExpanded = Ext.isFunction(rec.isExpanded) ? rec.isExpanded() : false;
+							if (!isLeaf) {
+								if (isExpanded) {
+									rec.collapse();
+								} else {
+									expand(rec);
+								}
+							}
+						}
+						return;
+					}
+
+					if (!rec) {
+						return;
+					}
+
+					if (key === 38 || key === 40) {
+						e.preventDefault();
+						e.stopPropagation();
+						navigateSibling(rec, key === 40 ? "next" : "prev");
+						return;
+					}
+
+					isLeaf = Ext.isFunction(rec.isLeaf) ? rec.isLeaf() : true;
+					isExpanded = Ext.isFunction(rec.isExpanded) ? rec.isExpanded() : false;
+
+					if (key === 37 || key === 39) {
+						e.preventDefault();
+						e.stopPropagation();
+						if (isLeaf) {
+							return;
+						}
+						if (key === 39 && !isExpanded) {
+							expand(rec);
+						} else if (key === 37 && isExpanded) {
+							rec.collapse();
+						} else {
+							focusRecord(rec);
+						}
+						return;
+					}
+
+				}, true);
+			};
+
+		if (treePanel.rendered && treePanel.getView() && treePanel.getView().rendered) {
+			ready();
+		} else {
+			treePanel.on("viewready", ready, null, { single : true });
+		}
 	},
 
 	applyHeaderPopupMethods : function (controller) {
@@ -1444,6 +2488,10 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 
         if (row) {
             this.setHeaderPopupActiveRowTabIndex(popup, row);
+            if (view && view.el) {
+                view.el.select('.lk-popup-row-focused').removeCls('lk-popup-row-focused');
+            }
+            Ext.fly(row).addCls('lk-popup-row-focused');
         }
 
         if (record && selectionModel && selectionModel.select) {
@@ -1912,6 +2960,9 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
             view.el.dom.setAttribute('aria-label', label);
             view.el.dom.setAttribute('tabindex', '-1');
             this.syncResourceTypePopupRows(popup, view, config);
+            if (popup.isXType && popup.isXType('treepanel')) {
+                this.wireTreePopupAria(popup);
+            }
         }
     },
     syncResourceTypePopupRows: function (popup, view, config) {
@@ -1941,12 +2992,14 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
         if (!dom) {
             return;
         }
-
         focusDom = this.getHeaderPopupRowFocusElement(dom);
 
         dom.setAttribute('tabindex', '-1');
-        dom.setAttribute('role', 'presentation');
+        dom.setAttribute('role', role);
         dom.setAttribute('aria-selected', selected ? 'true' : 'false');
+        if (record && record.getDepth) {
+            dom.setAttribute('aria-level', String(record.getDepth() + 1));
+        }
         if (record && record.isLeaf && !record.isLeaf()) {
             dom.setAttribute(
                 'aria-expanded',
@@ -2242,10 +3295,415 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 
         return Ext.String.htmlDecode(
             (localeName && localeName.SearchFRT) || 'Search resource types');
+    }
     },
-	},
+
 	eventFocusCls : "lk-board-event-focused",
 	rowFocusCls : "lk-board-row-focused",
+
+	wireGridAriaIndices : function (grid) {
+		var apply,
+			store;
+
+		if (!grid || !grid.getView || grid.leankorGridAriaIndicesWired) {
+			return;
+		}
+
+		grid.leankorGridAriaIndicesWired = true;
+		apply = function () {
+			var view = grid.getView(),
+				viewDom = view && view.el && view.el.dom,
+				store = view && view.getStore && view.getStore(),
+				total = store && store.getCount ? store.getCount() : 0,
+				headerCt = grid.headerCt || (grid.lockedGrid && grid.lockedGrid.headerCt),
+				cols = headerCt && headerCt.getVisibleGridColumns
+					? headerCt.getVisibleGridColumns()
+					: [],
+				rows,
+				i;
+
+			if (!viewDom) {
+				return;
+			}
+
+			viewDom.setAttribute("role", "grid");
+			viewDom.setAttribute("aria-rowcount", total);
+			viewDom.setAttribute("aria-colcount", cols.length);
+
+			Ext.Array.forEach(cols, function (column, index) {
+				if (column.el && column.el.dom) {
+					column.el.dom.setAttribute("role", "columnheader");
+					column.el.dom.setAttribute("aria-colindex", String(index + 1));
+				}
+			});
+
+			rows = viewDom.querySelectorAll(".x-grid-item, tr.x-grid-row");
+			for (i = 0; i < rows.length; i++) {
+				var row = rows[i],
+					record = view.getRecord && view.getRecord(row),
+					cells = row.querySelectorAll("td.x-grid-cell"),
+					c;
+
+				row.setAttribute("role", "row");
+				row.setAttribute("aria-rowindex", String(i + 1));
+				if (record && record.isLeaf && !record.isLeaf()) {
+					row.setAttribute(
+						"aria-expanded",
+						record.isExpanded && record.isExpanded() ? "true" : "false"
+					);
+				}
+				for (c = 0; c < cells.length; c++) {
+					cells[c].setAttribute("role", "gridcell");
+					cells[c].setAttribute("aria-colindex", String(c + 1));
+				}
+			}
+		};
+
+		if (grid.rendered && grid.getView() && grid.getView().rendered) {
+			apply();
+		} else {
+			grid.on("viewready", apply, null, { single : true });
+		}
+
+		grid.on("viewready", apply);
+		store = grid.getStore && grid.getStore();
+		if (store) {
+			store.on("refresh", apply);
+			store.on("datachanged", apply);
+			store.on("sort", apply);
+			store.on("filterchange", apply);
+		}
+	},
+
+	initGridKeyboardNavigation : function (grid, opts) {
+		if (!grid || !grid.getView || grid.leankorGridKeyboardNavigationWired) {
+			return;
+		}
+
+		grid.leankorGridKeyboardNavigationWired = true;
+		opts = opts || {};
+
+		var me = this,
+			view = grid.getView && grid.getView(),
+			ready = function () {
+				var dom = view && view.el && view.el.dom;
+
+				if (!dom) {
+					return;
+				}
+
+				dom.setAttribute("tabindex", "0");
+
+				var gotoRow = function (idx) {
+					var store = view.getStore && view.getStore(),
+						total = store && store.getCount && store.getCount(),
+						rec,
+						selectionModel;
+
+					if (!store || !total) {
+						return null;
+					}
+
+					idx = Math.max(0, Math.min(total - 1, idx));
+					rec = store.getAt(idx);
+					if (!rec) {
+						return null;
+					}
+
+					selectionModel = grid.getSelectionModel && grid.getSelectionModel();
+					if (selectionModel) {
+						selectionModel.select(rec);
+					}
+					if (Ext.isFunction(view.focusRow)) {
+						try {
+							view.focusRow(rec);
+						} catch (ignore) {}
+					}
+					if (Ext.isFunction(opts.announceRowFn)) {
+						me.announce(opts.announceRowFn(rec, idx, total));
+					}
+					return rec;
+				};
+
+				dom.addEventListener("keydown", function (e) {
+					var key = e.keyCode || e.which,
+						upKey = Ext.EventObject.UP || 38,
+						downKey = Ext.EventObject.DOWN || 40,
+						leftKey = Ext.EventObject.LEFT || 37,
+						rightKey = Ext.EventObject.RIGHT || 39,
+						enterKey = Ext.EventObject.ENTER || 13,
+						escKey = Ext.EventObject.ESC || 27,
+						homeKey = Ext.EventObject.HOME || 36,
+						endKey = Ext.EventObject.END || 35,
+						spaceKey = Ext.EventObject.SPACE || 32,
+						store,
+						selectionModel,
+						record,
+						rowIdx,
+						total,
+						isTreeRecord,
+						parentIdx;
+
+					if (
+						key !== upKey &&
+						key !== downKey &&
+						key !== leftKey &&
+						key !== rightKey &&
+						key !== enterKey &&
+						key !== escKey &&
+						key !== homeKey &&
+						key !== endKey &&
+						key !== spaceKey) {
+						return;
+					}
+
+					store = view.getStore && view.getStore();
+					if (!store || !store.getCount || !store.getCount()) {
+						return;
+					}
+
+					selectionModel = grid.getSelectionModel && grid.getSelectionModel();
+					record = selectionModel && selectionModel.getSelection && selectionModel.getSelection()[0];
+					rowIdx = record ? store.indexOf(record) : 0;
+					total = store.getCount();
+					isTreeRecord = record && Ext.isFunction(record.isLeaf);
+
+					if (key === downKey) {
+						e.preventDefault();
+						e.stopPropagation();
+						gotoRow(rowIdx + 1);
+					} else if (key === upKey) {
+						e.preventDefault();
+						e.stopPropagation();
+						gotoRow(rowIdx - 1);
+					} else if (key === homeKey) {
+						e.preventDefault();
+						e.stopPropagation();
+						gotoRow(0);
+					} else if (key === endKey) {
+						e.preventDefault();
+						e.stopPropagation();
+						gotoRow(total - 1);
+					} else if (key === rightKey) {
+						if (isTreeRecord && !record.isLeaf() && !record.isExpanded()) {
+							e.preventDefault();
+							e.stopPropagation();
+							record.expand();
+						}
+					} else if (key === leftKey) {
+						if (isTreeRecord && !record.isLeaf() && record.isExpanded()) {
+							e.preventDefault();
+							e.stopPropagation();
+							record.collapse();
+						} else if (
+							isTreeRecord &&
+							record.parentNode &&
+							Ext.isFunction(record.parentNode.isRoot) &&
+							!record.parentNode.isRoot()) {
+							e.preventDefault();
+							e.stopPropagation();
+							parentIdx = store.indexOf(record.parentNode);
+							if (parentIdx >= 0) {
+								gotoRow(parentIdx);
+							}
+						}
+					} else if (key === enterKey || key === spaceKey) {
+						if (Ext.isFunction(opts.onActivate) && record) {
+							e.preventDefault();
+							e.stopPropagation();
+							opts.onActivate(record, e);
+						}
+					} else if (key === escKey) {
+						me.restoreFocus();
+					}
+				}, true);
+			};
+
+		if (view && view.rendered) {
+			ready();
+		} else if (view && view.on) {
+			view.on("viewready", ready, null, { single : true });
+		}
+	},
+
+	wireTreePopupAria : function (treePanel) {
+		var apply,
+			schedule,
+			store;
+
+		if (!treePanel || treePanel.leankorTreePopupAriaWired) {
+			return;
+		}
+
+		treePanel.leankorTreePopupAriaWired = true;
+		apply = function () {
+			var view,
+				viewDom,
+				rows;
+
+			if (treePanel.destroyed || treePanel.isDestroyed) {
+				return;
+			}
+
+			view = treePanel.getView && treePanel.getView();
+			viewDom = view && view.el && view.el.dom;
+			if (!viewDom) {
+				return;
+			}
+
+			viewDom.setAttribute("role", "tree");
+			if (treePanel.multiSelect) {
+				viewDom.setAttribute("aria-multiselectable", "true");
+			}
+
+			rows = viewDom.querySelectorAll(".x-grid-item");
+			Ext.Array.forEach(rows, function (row) {
+				var record = view.getRecord && view.getRecord(row),
+					label = record &&
+						record.get &&
+						(record.get("Name") || record.get("name") || record.get("text")),
+					tr = row.querySelector("tr");
+
+				if (!record) {
+					return;
+				}
+
+				row.setAttribute("role", "treeitem");
+				if (label) {
+					row.setAttribute("aria-label", Ext.htmlEncode(label));
+				}
+				if (tr) {
+					Ext.Array.forEach(
+						["aria-level", "aria-expanded", "aria-selected"],
+						function (attr) {
+							var value = tr.getAttribute(attr);
+
+							if (value !== null) {
+								row.setAttribute(attr, value);
+							}
+						}
+					);
+				}
+			});
+		};
+		schedule = function () {
+			Ext.defer(apply, 50);
+		};
+		store = treePanel.getStore && treePanel.getStore();
+
+		if (store) {
+			store.on("refresh", schedule);
+			store.on("datachanged", schedule);
+			store.on("load", schedule);
+			treePanel.on("beforedestroy", function () {
+				store.un("refresh", schedule);
+				store.un("datachanged", schedule);
+				store.un("load", schedule);
+			});
+		}
+		treePanel.on("itemexpand", schedule);
+		treePanel.on("itemcollapse", schedule);
+		treePanel.on("selectionchange", schedule);
+
+		if (treePanel.rendered) {
+			schedule();
+		} else {
+			treePanel.on("afterrender", schedule, null, { single : true });
+		}
+	},
+
+	wireSplitterKeyboard : function (panel, opts) {
+		opts = opts || {};
+		var me = this,
+			min = opts.min || 80,
+			maxRatio = opts.maxRatio || 0.8,
+			apply = function () {
+				var splitter = panel && panel.down && panel.down("splitter"),
+					dom = splitter && splitter.el && splitter.el.dom,
+					lockedGrid = panel && panel.lockedGrid,
+					maxWidth,
+					updateAria;
+
+				if (!dom || dom.leankorSplitterKeyboardBound || !lockedGrid) {
+					return;
+				}
+
+				dom.leankorSplitterKeyboardBound = true;
+				dom.setAttribute("tabindex", "0");
+				maxWidth = function () {
+					var panelW = (panel.getWidth && panel.getWidth()) || window.innerWidth;
+
+					return Math.max(min + 100, Math.floor(panelW * maxRatio));
+				};
+				updateAria = function () {
+					dom.setAttribute("role", "separator");
+					dom.setAttribute("aria-orientation", "vertical");
+					dom.setAttribute(
+						"aria-label",
+						opts.ariaLabel ||
+						((typeof Locale !== "undefined" &&
+							Locale.LocaleName &&
+							Locale.LocaleName.A11ySplitter) ||
+							"Resize divider")
+					);
+					dom.setAttribute("aria-valuemin", String(min));
+					dom.setAttribute("aria-valuemax", String(maxWidth()));
+					dom.setAttribute("aria-valuenow", String(lockedGrid.getWidth()));
+				};
+
+				updateAria();
+				dom.addEventListener("focus", function () {
+					dom.classList.add("x-splitter-focus");
+				});
+				dom.addEventListener("blur", function () {
+					dom.classList.remove("x-splitter-focus");
+				});
+				dom.addEventListener("keydown", function (e) {
+					var key = e.keyCode,
+						newWidth;
+
+					if (key !== 36 && key !== 35) {
+						return;
+					}
+
+					newWidth = key === 36 ? min : maxWidth();
+					if (newWidth === lockedGrid.getWidth()) {
+						return;
+					}
+
+					e.preventDefault();
+					e.stopPropagation();
+					lockedGrid.setWidth(newWidth);
+					if (panel.updateLayout) {
+						panel.updateLayout();
+					}
+					updateAria();
+					me.announce(
+						(typeof Locale !== "undefined" &&
+							Locale.LocaleName &&
+							Locale.LocaleName.A11ySplitterResized)
+							? Ext.String.format(Locale.LocaleName.A11ySplitterResized, newWidth)
+							: "Width " + newWidth + " pixels"
+					);
+				});
+
+				if (lockedGrid.on) {
+					lockedGrid.on("resize", function () {
+						updateAria();
+					});
+				}
+			};
+
+		if (!panel) {
+			return;
+		}
+
+		if (panel.rendered) {
+			apply();
+		} else {
+			panel.on("afterrender", apply, null, { single : true });
+		}
+	},
 
 	enableBoardFocus : function (panel) {
 		var me = this,
@@ -2275,17 +3733,27 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 
 		me.bindFocusModality();
 		me.setPanelAccessibility(panel);
+		me.wireGridAriaIndices(panel);
+		if (panel.lockedGrid) {
+			me.wireGridAriaIndices(panel.lockedGrid);
+		}
+		if (panel.normalGrid) {
+			me.wireGridAriaIndices(panel.normalGrid);
+		}
+		me.wireSplitterKeyboard(panel);
 		me.bindSchedulingView(panel, schedulingView);
-		me.bindGridView(
-			panel.lockedGrid &&
-				panel.lockedGrid.getView &&
-				panel.lockedGrid.getView()
-		);
-		me.bindGridView(
-			panel.normalGrid &&
-				panel.normalGrid.getView &&
-				panel.normalGrid.getView()
-		);
+		me.initGridKeyboardNavigation(panel.lockedGrid || panel, {
+			announceRowFn: function (record, idx, total) {
+				return me.getGridRowAnnouncement(record, idx, total);
+			}
+		});
+		if (panel.normalGrid) {
+			me.initGridKeyboardNavigation(panel.normalGrid, {
+				announceRowFn: function (record, idx, total) {
+					return me.getGridRowAnnouncement(record, idx, total);
+				}
+			});
+		}
 		me.bindHeaderAddButton(panel);
 		me.syncPanel(panel);
 		Ext.defer(me.syncPanel, 100, me, [panel]);
@@ -2319,6 +3787,12 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				delegate : view.eventSelector
 			}
 		);
+
+		view.el.on("keydown", function (e, target) {
+			me.onSchedulingViewKeyDown(panel, view, e, target);
+		});
+
+		me.wireEventKeyboardNavigation(panel, view);
 
 		view.on({
 			refresh : sync,
@@ -2427,79 +3901,6 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		}
 	},
 
-	bindGridView : function (gridView) {
-		var me = this,
-			rowSelector;
-
-		if (!gridView || gridView.leankorBoardFocusEnabled) {
-			return;
-		}
-
-		if (!gridView.el) {
-			gridView.on(
-				"afterrender",
-				function () {
-					me.bindGridView(gridView);
-					me.syncGridView(gridView);
-				},
-				me,
-				{
-					single : true
-				}
-			);
-			return;
-		}
-
-		gridView.leankorBoardFocusEnabled = true;
-		rowSelector = me.getGridFocusSelector(gridView);
-
-		gridView.el.on(
-			"focusin",
-			function (e, target) {
-				me.onGridFocusIn(gridView, e, target);
-			},
-			me,
-			{
-				delegate : rowSelector + ", .x-grid-cell"
-			}
-		);
-
-		gridView.el.on(
-			"focusout",
-			function (e, target) {
-				me.onGridFocusOut(gridView, e, target);
-			},
-			me,
-			{
-				delegate : rowSelector + ", .x-grid-cell"
-			}
-		);
-
-		gridView.el.on(
-			"keydown",
-			function (e, target) {
-				me.onGridKeyDown(gridView, e, target);
-			},
-			me,
-			{
-				delegate : rowSelector + ", .x-grid-cell"
-			}
-		);
-
-		gridView.on({
-			refresh : function () {
-				me.syncGridView(gridView);
-			},
-			itemadd : function () {
-				me.syncGridView(gridView);
-			},
-			itemupdate : function () {
-				me.syncGridView(gridView);
-			},
-			scope : me
-		});
-	},
-
 	bindHeaderAddButton : function (panel) {
 		var me = this;
 
@@ -2519,6 +3920,10 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				delegate : ".addBtnTop"
 			}
 		);
+
+		panel.el.on("focusin", function (e, target) {
+			me.onHeaderAddButtonFocusIn(panel, e, target);
+		});
 
 	},
 
@@ -2572,6 +3977,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		if (panelLabel) {
 			gridView.el.dom.setAttribute("aria-label", panelLabel);
 		}
+		gridView.el.dom.setAttribute("role", "treegrid");
 
 		gridView.el
 			.select(me.getGridFocusSelector(gridView))
@@ -2584,12 +3990,14 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		var label = this.getPanelLabel(panel);
 
 		if (panel && panel.el && label) {
+			panel.el.dom.setAttribute("role", "region");
 			panel.el.dom.setAttribute("aria-label", label);
 		}
 	},
 
 	syncHeaderAddButtons : function (panel) {
-		var label = this.getHeaderAddButtonLabel();
+		var me = this,
+			label = this.getHeaderAddButtonLabel();
 
 		if (!panel.el) {
 			return;
@@ -2601,13 +4009,12 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 			if (headerEl && headerEl.dom) {
 				headerEl.dom.setAttribute("tabindex", "-1");
 				headerEl.dom.setAttribute("role", "presentation");
-				headerEl.removeCls("x-column-header-focus");
+				me.clearHeaderAddButtonOuterFocus(headerEl);
 				headerEl
 					.select(
-						".x-column-header-inner, .x-column-header-text, .x-column-header-title"
+						".x-column-header-inner, .x-column-header-text, .x-column-header-text-container, .x-column-header-text-wrapper, .x-column-header-title"
 					)
 					.each(function (innerEl) {
-						innerEl.dom.setAttribute("tabindex", "-1");
 						innerEl.dom.setAttribute("role", "presentation");
 					});
 			}
@@ -2615,19 +4022,34 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 			buttonEl.dom.setAttribute("tabindex", "0");
 			buttonEl.dom.setAttribute("role", "button");
 			buttonEl.dom.setAttribute("aria-label", label);
+			buttonEl.dom.setAttribute("title", label);
 		});
 	},
 
 	prepareGridRow : function (rowEl, gridView) {
 		var dom = rowEl && (rowEl.dom || rowEl),
-			label;
+			record,
+			label,
+			selected;
 
 		if (!dom) {
 			return;
 		}
 
+		record = this.getRecordFromRow(dom, gridView);
+		selected = this.isGridRecordSelected(gridView, record);
 		dom.setAttribute("tabindex", "-1");
 		dom.setAttribute("role", "row");
+		dom.setAttribute("aria-selected", selected ? "true" : "false");
+		dom.setAttribute("aria-level", String(this.getGridRecordLevel(record)));
+		if (this.isExpandableGridRecord(record)) {
+			dom.setAttribute(
+				"aria-expanded",
+				record.isExpanded && record.isExpanded() ? "true" : "false"
+			);
+		} else {
+			dom.removeAttribute("aria-expanded");
+		}
 
 		label = this.getGridRowLabel(rowEl, gridView);
 		if (label) {
@@ -2641,96 +4063,11 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 
 				cellEl.dom.setAttribute("role", "gridcell");
 				cellEl.dom.setAttribute("tabindex", "-1");
+				cellEl.dom.setAttribute("aria-selected", selected ? "true" : "false");
 				if (cellLabel) {
 					cellEl.dom.setAttribute("aria-label", cellLabel);
 				}
 			}, this);
-	},
-
-	onGridFocusIn : function (gridView, e, target) {
-		var row = this.getFocusRowFromTarget(gridView, target);
-
-		if (!row) {
-			return;
-		}
-
-		if (this.keyboardFocusActive) {
-			this.clearFocusedRows(row);
-			Ext.fly(row).addCls(this.rowFocusCls);
-		} else {
-			Ext.fly(row).removeCls(this.rowFocusCls);
-		}
-	},
-
-	onGridFocusOut : function (gridView, e, target) {
-		var row = this.getFocusRowFromTarget(gridView, target);
-
-		if (row) {
-			Ext.fly(row).removeCls(this.rowFocusCls);
-		}
-	},
-
-	onGridKeyDown : function (gridView, e, target) {
-		var key = e.getKey(),
-			downKey = Ext.EventObject.DOWN || 40,
-			upKey = Ext.EventObject.UP || 38,
-			row,
-			nextRow;
-
-		if (key !== downKey && key !== upKey) {
-			return;
-		}
-
-		row = this.getFocusRowFromTarget(gridView, target);
-		nextRow = this.getAdjacentGridRow(gridView, row, key === downKey ? 1 : -1);
-
-		if (!nextRow) {
-			return;
-		}
-
-		e.stopEvent();
-		this.setKeyboardFocusMode(true);
-		this.focusGridRow(nextRow);
-	},
-
-	getAdjacentGridRow : function (gridView, row, direction) {
-		var rows,
-			index = -1,
-			nextIndex;
-
-		if (!gridView || !gridView.el || !row) {
-			return null;
-		}
-
-		rows = gridView.el.select(this.getGridFocusSelector(gridView)).elements || [];
-		Ext.Array.each(rows, function (candidate, candidateIndex) {
-			if (candidate === row) {
-				index = candidateIndex;
-				return false;
-			}
-			return true;
-		});
-
-		nextIndex = index + direction;
-		while (nextIndex >= 0 && nextIndex < rows.length) {
-			if (this.isFocusableGridRow(rows[nextIndex])) {
-				return rows[nextIndex];
-			}
-			nextIndex += direction;
-		}
-
-		return null;
-	},
-
-	isFocusableGridRow : function (row) {
-		var el = row && Ext.fly(row);
-
-		return !!(
-			el &&
-			row.offsetParent !== null &&
-			!el.hasCls("x-grid-item-collapsed") &&
-			row.getAttribute("aria-hidden") !== "true"
-		);
 	},
 
 	focusGridRow : function (row) {
@@ -2747,21 +4084,6 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		}, 1);
 	},
 
-	getFocusRowFromTarget : function (gridView, target) {
-		var rowSelector = this.getGridFocusSelector(gridView),
-			targetEl = target && Ext.fly(target);
-
-		if (!targetEl) {
-			return null;
-		}
-
-		if (targetEl.is(rowSelector)) {
-			return target;
-		}
-
-		return targetEl.up(rowSelector, gridView.el, true);
-	},
-
 	prepareEventNode : function (node, tabIndex, panel, view) {
 		var dom = node && (node.dom || node);
 
@@ -2770,7 +4092,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		}
 
 		dom.setAttribute("tabindex", String(tabIndex));
-		dom.setAttribute("role", tabIndex === -1 ? "presentation" : "button");
+		dom.setAttribute("role", tabIndex === -1 ? "presentation" : "gridcell");
 		this.setLabelFromText(dom, this.getEventLabel(dom, panel, view));
 	},
 
@@ -2821,17 +4143,491 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		Ext.fly(e.getTarget(".sch-event") || target).removeCls(this.eventFocusCls);
 	},
 
+	onSchedulingViewKeyDown : function (panel, view, e, target) {
+		var key = e.getKey && e.getKey(),
+			tabKey = Ext.EventObject.TAB || 9,
+			targetEl = target && Ext.fly(target);
+
+		if (
+			key !== tabKey ||
+			!targetEl ||
+			!(
+				targetEl.is(".sch-event") ||
+				targetEl.is(".gnt-resource-utilization-interval") ||
+				targetEl.up(".sch-event", view.el, true) ||
+				targetEl.up(".gnt-resource-utilization-interval", view.el, true)
+			)
+		) {
+			return true;
+		}
+
+		e.stopEvent();
+		if (e.shiftKey) {
+			this.focusLastGridRow(panel);
+		} else if (!this.focusNextFocusableAfterPanel(panel)) {
+			this.focusFirstHeaderControl(panel);
+		}
+		return false;
+	},
+
+	wireEventKeyboardNavigation : function (panel, view) {
+		var me = this,
+			panelDom = panel && panel.el && panel.el.dom,
+			utilizationPanel = me.isUtilizationPanel(panel),
+			itemSelector = utilizationPanel ?
+				".gnt-resource-utilization-interval:not([aria-hidden='true'])" :
+				".sch-event",
+			lastEventByResource = {};
+
+		if (!panelDom || !view || panelDom.leankorEventKeyboardNavBound) {
+			return;
+		}
+
+		panelDom.leankorEventKeyboardNavBound = true;
+
+		var allEvents = function () {
+			var dom = view.el && view.el.dom;
+
+			return dom ?
+				Array.prototype.slice.call(dom.querySelectorAll(itemSelector)) :
+				[];
+		};
+
+		var sortedAllEvents = function () {
+			return allEvents().sort(function (a, b) {
+				var ar = a.getBoundingClientRect(),
+					br = b.getBoundingClientRect();
+
+				if (Math.abs(ar.top - br.top) > 4) {
+					return ar.top - br.top;
+				}
+				return ar.left - br.left;
+			});
+		};
+
+		var sameRowEvents = function (eventEl) {
+			var rect = eventEl.getBoundingClientRect(),
+				mid = rect.top + rect.height / 2,
+				events = allEvents().filter(function (candidate) {
+					var cr = candidate.getBoundingClientRect();
+
+					return cr.top <= mid && cr.bottom >= mid;
+				});
+
+			return events.sort(function (a, b) {
+				return a.getBoundingClientRect().left -
+					b.getBoundingClientRect().left;
+			});
+		};
+
+		var eventsInRow = function (rowEl) {
+			if (!rowEl) {
+				return [];
+			}
+
+			var rect = rowEl.getBoundingClientRect(),
+				events = allEvents().filter(function (eventEl) {
+					var er = eventEl.getBoundingClientRect(),
+						mid = er.top + er.height / 2;
+
+					return mid >= rect.top && mid <= rect.bottom;
+				});
+
+			return events.sort(function (a, b) {
+				return a.getBoundingClientRect().left -
+					b.getBoundingClientRect().left;
+			});
+		};
+
+		var resolveEventRecord = function (eventEl) {
+			var node = eventEl &&
+				eventEl.closest &&
+				eventEl.closest(".sch-event");
+
+			return view.resolveEventRecord ?
+				view.resolveEventRecord(node || eventEl) :
+				null;
+		};
+
+		var resolveResourceForEvent = function (eventEl) {
+			var eventRecord = resolveEventRecord(eventEl),
+				resource,
+				lockedView,
+				lockedDom,
+				rows,
+				rect,
+				mid,
+				i;
+
+			if (eventRecord && eventRecord.getResource) {
+				try {
+					resource = eventRecord.getResource();
+				} catch (ignore) {}
+				if (resource) {
+					return resource;
+				}
+			}
+
+			lockedView = panel.lockedGrid &&
+				panel.lockedGrid.getView &&
+				panel.lockedGrid.getView();
+			lockedDom = lockedView && lockedView.el && lockedView.el.dom;
+			if (!lockedView || !lockedDom) {
+				return null;
+			}
+
+			rect = eventEl.getBoundingClientRect();
+			mid = rect.top + rect.height / 2;
+			rows = lockedDom.querySelectorAll(".x-grid-item, tr.x-grid-row");
+			for (i = 0; i < rows.length; i++) {
+				var rowRect = rows[i].getBoundingClientRect();
+
+				if (rowRect.top <= mid && rowRect.bottom >= mid) {
+					return lockedView.getRecord && lockedView.getRecord(rows[i]);
+				}
+			}
+			return null;
+		};
+
+		var focusEvent = function (eventEl) {
+			if (!eventEl) {
+				return;
+			}
+
+			Ext.Array.forEach(allEvents(), function (item) {
+				item.setAttribute("tabindex", item === eventEl ? "0" : "-1");
+			});
+			if (utilizationPanel) {
+				var parentEvent = Ext.fly(eventEl).up(".sch-event");
+
+				if (parentEvent) {
+					parentEvent
+						.select(".gnt-resource-utilization-interval")
+						.each(function (intervalEl) {
+							if (intervalEl.dom !== eventEl) {
+								intervalEl.dom.setAttribute("tabindex", "-1");
+							}
+						});
+				}
+			}
+			eventEl.focus();
+
+			var record = resolveEventRecord(eventEl),
+				name = record &&
+					((record.get && (record.get("CustomTaskName") || record.get("Name"))) ||
+						(record.getName && record.getName()));
+
+			if (name) {
+				me.announce(Ext.htmlEncode(name));
+			}
+		};
+
+		var focusRow = function (resource) {
+			var lockedView = panel.lockedGrid &&
+					panel.lockedGrid.getView &&
+					panel.lockedGrid.getView(),
+				dom = lockedView && lockedView.el && lockedView.el.dom,
+				sm = panel.lockedGrid &&
+					panel.lockedGrid.getSelectionModel &&
+					panel.lockedGrid.getSelectionModel();
+
+			if (!resource || !dom) {
+				return false;
+			}
+
+			if (sm) {
+				try {
+					sm.select(resource);
+				} catch (ignore) {}
+			}
+			if (lockedView.focusRow) {
+				try {
+					lockedView.focusRow(resource);
+				} catch (ignore2) {}
+			}
+			if (!dom.contains(document.activeElement)) {
+				if (!dom.hasAttribute("tabindex")) {
+					dom.setAttribute("tabindex", "0");
+				}
+				dom.focus();
+			}
+			return dom.contains(document.activeElement) || document.activeElement === dom;
+		};
+
+		var fireContextMenu = function (eventEl) {
+			var eventRecord = resolveEventRecord(eventEl),
+				rect,
+				fakeEvent;
+
+			if (!eventRecord) {
+				return false;
+			}
+
+			rect = eventEl.getBoundingClientRect();
+			fakeEvent = {
+				stopEvent : Ext.emptyFn,
+				preventDefault : Ext.emptyFn,
+				stopPropagation : Ext.emptyFn,
+				getXY : function () {
+					return [rect.left + Math.min(rect.width / 2, 80), rect.bottom];
+				}
+			};
+			me.announce(
+				(typeof Locale !== "undefined" &&
+					Locale.LocaleName &&
+					Locale.LocaleName.A11yContextMenuOpened) ||
+					"Context menu opened"
+			);
+			panel.fireEvent("eventcontextmenu", panel, eventRecord, fakeEvent);
+			return true;
+		};
+
+		view.el.dom.addEventListener("focusin", function (event) {
+			var eventEl = event.target &&
+				event.target.closest &&
+				event.target.closest(itemSelector),
+				resource,
+				id;
+
+			if (!eventEl) {
+				return;
+			}
+
+			resource = resolveResourceForEvent(eventEl);
+			id = resource &&
+				((resource.getId && resource.getId()) ||
+					(resource.get && (resource.get("Id") || resource.get("ResourceId"))));
+			if (id !== null && id !== undefined) {
+				lastEventByResource[id] = eventEl;
+			}
+		});
+
+		document.addEventListener("keydown", function (event) {
+			var key = event.keyCode,
+				target = event.target,
+				active,
+				eventEl,
+				handled = false;
+
+			if (!target || !panelDom.contains(target)) {
+				return;
+			}
+			if (target.closest && target.closest(".x-panel-header, .x-header")) {
+				return;
+			}
+
+			active = document.activeElement || target;
+			eventEl = active && active.closest && active.closest(".sch-event");
+			if (utilizationPanel) {
+				eventEl = active &&
+					active.closest &&
+					active.closest(".gnt-resource-utilization-interval:not([aria-hidden='true'])");
+			}
+			if (eventEl) {
+				var siblings,
+					index,
+					resource,
+					allSorted;
+
+				if (key === 9) {
+					if (event.shiftKey) {
+						handled = me.focusLastGridRow(panel);
+					} else {
+						handled = me.focusNextFocusableAfterPanel(panel) ||
+							me.focusFirstHeaderControl(panel);
+					}
+				} else if (
+					(key === 121 && event.shiftKey) ||
+					key === 93 ||
+					key === 13
+				) {
+					handled = fireContextMenu(eventEl);
+				} else if (key === 27) {
+					resource = resolveResourceForEvent(eventEl);
+					handled = focusRow(resource);
+					if (handled) {
+						eventEl.setAttribute("tabindex", "-1");
+					}
+				} else if (key === 36 || key === 35) {
+					siblings = event.ctrlKey ? sortedAllEvents() : sameRowEvents(eventEl);
+					if (siblings.length) {
+						focusEvent(key === 36 ? siblings[0] : siblings[siblings.length - 1]);
+						handled = true;
+					}
+				} else if (key === 37 || key === 39) {
+					siblings = sameRowEvents(eventEl);
+					index = siblings.indexOf(eventEl);
+					if (siblings[index + (key === 39 ? 1 : -1)]) {
+						focusEvent(siblings[index + (key === 39 ? 1 : -1)]);
+						handled = true;
+					}
+				}
+
+				if (handled) {
+					event.preventDefault();
+					event.stopPropagation();
+				}
+				return;
+			}
+
+			if (key !== 37 && key !== 39 && !(key === 9 && !event.shiftKey)) {
+				return;
+			}
+
+			var lockedView = panel.lockedGrid &&
+					panel.lockedGrid.getView &&
+					panel.lockedGrid.getView(),
+				lockedDom = lockedView && lockedView.el && lockedView.el.dom,
+				rowEl,
+				rowEvents,
+				targetEvent,
+				rowRecord,
+				rowId;
+
+			if (key === 9 && (!lockedDom || !lockedDom.contains(target))) {
+				return;
+			}
+
+			rowEl = target.closest && target.closest(".x-grid-item, tr.x-grid-row");
+			rowEvents = eventsInRow(rowEl);
+			if (!rowEvents.length) {
+				allSorted = sortedAllEvents();
+				rowEvents = allSorted;
+			}
+			if (!rowEvents.length) {
+				if (key === 9) {
+					if (me.focusNextFocusableAfterPanel(panel) ||
+						me.focusFirstHeaderControl(panel)) {
+						event.preventDefault();
+						event.stopPropagation();
+					}
+				}
+				return;
+			}
+
+			if (key !== 37 && lockedView && lockedView.getRecord && rowEl) {
+				rowRecord = lockedView.getRecord(rowEl);
+				rowId = rowRecord &&
+					((rowRecord.getId && rowRecord.getId()) ||
+						(rowRecord.get && (rowRecord.get("Id") || rowRecord.get("ResourceId"))));
+				targetEvent = rowId !== null && rowId !== undefined ?
+					lastEventByResource[rowId] :
+					null;
+				if (targetEvent && rowEvents.indexOf(targetEvent) === -1) {
+					targetEvent = null;
+				}
+			}
+
+			focusEvent(targetEvent || (key === 37 ?
+				rowEvents[rowEvents.length - 1] :
+				rowEvents[0]));
+			event.preventDefault();
+			event.stopPropagation();
+		}, true);
+
+		view.el.dom.addEventListener("keydown", function (event) {
+			var key = event.keyCode || event.which,
+				tabKey = Ext.EventObject.TAB || 9,
+				target = event.target,
+				insideItem = target &&
+					target.closest &&
+					(target.closest(".sch-event") ||
+						target.closest(".gnt-resource-utilization-interval"));
+
+			if (key !== tabKey || insideItem) {
+				return;
+			}
+
+			if (event.shiftKey) {
+				if (me.focusLastGridRow(panel)) {
+					event.preventDefault();
+					event.stopPropagation();
+				}
+			} else if (me.focusNextFocusableAfterPanel(panel) ||
+				me.focusFirstHeaderControl(panel)) {
+				event.preventDefault();
+				event.stopPropagation();
+			}
+		}, true);
+	},
+
 	onHeaderAddButtonKeyDown : function (panel, e, target) {
 		var key = e.getKey(),
+			tabKey = Ext.EventObject.TAB || 9,
 			enterKey = Ext.EventObject.ENTER || 13,
 			spaceKey = Ext.EventObject.SPACE || 32;
 
 		this.setKeyboardFocusMode(true);
 
+		if (key === tabKey) {
+			if (e.shiftKey) {
+				if (this.focusLastHeaderControl(panel)) {
+					e.stopEvent();
+				}
+			} else {
+				if (this.focusFirstGridRow(panel) || this.focusFirstTimelineItem(panel)) {
+					e.stopEvent();
+				}
+			}
+			return;
+		}
+
 		if (key === enterKey || key === spaceKey) {
 			e.stopEvent();
 			this.activateHeaderAddButton(panel, target, e);
 		}
+	},
+	onHeaderAddButtonFocusIn : function (panel, e, target) {
+		var me = this,
+			targetEl = target && Ext.fly(target),
+			headerEl,
+			addButton;
+
+		if (!targetEl || !panel || !panel.el) {
+			return;
+		}
+
+		headerEl = targetEl.is(".nameColumnCls")
+			? targetEl
+			: targetEl.up(".nameColumnCls", panel.el, true);
+
+		if (!headerEl || !headerEl.dom) {
+			return;
+		}
+
+		me.setKeyboardFocusMode(true);
+		addButton = headerEl.down(".addBtnTop");
+		me.clearHeaderAddButtonOuterFocus(headerEl);
+
+		if (
+			addButton &&
+			addButton.dom &&
+			target !== addButton.dom &&
+			!targetEl.up(".addBtnTop", headerEl, true)
+		) {
+			addButton.dom.setAttribute("tabindex", "0");
+			addButton.dom.setAttribute("role", "button");
+			Ext.defer(function () {
+				addButton.dom.focus();
+				me.clearHeaderAddButtonOuterFocus(headerEl);
+			}, 1);
+		}
+
+	},
+	clearHeaderAddButtonOuterFocus : function (headerEl) {
+		if (!headerEl || !headerEl.dom) {
+			return;
+		}
+
+		headerEl.removeCls("x-column-header-focus");
+		headerEl.dom.setAttribute("tabindex", "-1");
+		headerEl
+			.select(
+				".x-column-header-inner, .x-column-header-text, .x-column-header-text-container, .x-column-header-text-wrapper, .x-column-header-title"
+			)
+			.each(function (innerEl) {
+				innerEl.dom.setAttribute("tabindex", "-1");
+			});
 	},
 	activateHeaderAddButton : function (panel, target, e) {
 		var column = this.getHeaderAddButtonColumn(panel),
@@ -2902,6 +4698,130 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		}
 
 		this.focusGridRow(row);
+		return true;
+	},
+
+	focusFirstTimelineItem : function (panel) {
+		var view =
+				panel &&
+				panel.getSchedulingView &&
+				panel.getSchedulingView(),
+			item;
+
+		if (!view || !view.el) {
+			return false;
+		}
+
+		item =
+			view.el.down(".sch-event[tabindex='0']", true) ||
+			view.el.down(".gnt-resource-utilization-interval[tabindex='0']", true) ||
+			view.el.down(".sch-event", true) ||
+			view.el.down(".gnt-resource-utilization-interval", true);
+
+		if (!item) {
+			return false;
+		}
+
+		item.setAttribute("tabindex", "0");
+		Ext.defer(function () {
+			item.focus();
+		}, 1);
+		return true;
+	},
+
+	focusLastGridRow : function (panel) {
+		var lockedView =
+				panel &&
+				panel.lockedGrid &&
+				panel.lockedGrid.getView &&
+				panel.lockedGrid.getView(),
+			rows =
+				lockedView &&
+				lockedView.el &&
+				lockedView.el.select(this.getGridFocusSelector(lockedView)).elements,
+			row = rows && rows.length && rows[rows.length - 1];
+
+		if (!row) {
+			return false;
+		}
+
+		this.focusGridRow(row);
+		return true;
+	},
+
+	focusFirstHeaderControl : function (panel) {
+		var header = panel && panel.header,
+			control;
+
+		if (!header || !header.query) {
+			return false;
+		}
+
+		control = Ext.Array.findBy(header.query("[reference]"), function (cmp) {
+			return (
+				!cmp.hidden &&
+				!(cmp.isDisabled && cmp.isDisabled()) &&
+				cmp.el &&
+				cmp.el.dom
+			);
+		});
+
+		if (!control) {
+			return false;
+		}
+
+		Ext.defer(function () {
+			if (control.focus) {
+				control.focus();
+			} else {
+				control.el.dom.focus();
+			}
+		}, 1);
+		return true;
+	},
+
+	focusNextFocusableAfterPanel : function (panel) {
+		var panelDom = panel && panel.el && panel.el.dom,
+			focusables,
+			index = -1,
+			next,
+			i;
+
+		if (!panelDom) {
+			return false;
+		}
+
+		focusables = Ext.Array.filter(
+			Ext.Array.toArray(
+				document.querySelectorAll(
+					'a[href], button, input, textarea, select, [tabindex]:not([tabindex="-1"])'
+				)
+			),
+			function (el) {
+				return (
+					el.offsetParent !== null &&
+					!el.disabled &&
+					el.getAttribute("aria-hidden") !== "true"
+				);
+			}
+		);
+
+		for (i = 0; i < focusables.length; i++) {
+			if (panelDom.contains(focusables[i])) {
+				index = i;
+			} else if (index !== -1) {
+				next = focusables[i];
+				break;
+			}
+		}
+
+		if (!next) {
+			return false;
+		}
+
+		Ext.defer(function () {
+			next.focus();
+		}, 1);
 		return true;
 	},
 
@@ -3004,6 +4924,18 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		return panelLabel ? panelLabel + ", " + label : label;
 	},
 
+	getGridRowAnnouncement : function (record, idx, total) {
+		var localeName = typeof Locale !== "undefined" && Locale.LocaleName,
+			name = this.getRecordLabel(record);
+
+		return Ext.String.format(
+			(localeName && localeName.A11yRowAnnouncement) || "{0}, row {1} of {2}",
+			Ext.htmlEncode(name || ""),
+			idx + 1,
+			total
+		);
+	},
+
 	getGridCellLabel : function (cellEl, rowEl, gridView) {
 		var column = this.getColumnForCell(cellEl, gridView),
 			columnLabel = column && (column.text || column.header),
@@ -3080,6 +5012,45 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		}
 
 		return gridView.getRecord(rowDom);
+	},
+
+	isGridRecordSelected : function (gridView, record) {
+		var selectionModel =
+			gridView &&
+			gridView.getSelectionModel &&
+			gridView.getSelectionModel();
+
+		selectionModel =
+			selectionModel ||
+			(gridView &&
+				gridView.ownerGrid &&
+				gridView.ownerGrid.getSelectionModel &&
+				gridView.ownerGrid.getSelectionModel());
+
+		return !!(
+			selectionModel &&
+			record &&
+			selectionModel.isSelected &&
+			selectionModel.isSelected(record)
+		);
+	},
+
+	isExpandableGridRecord : function (record) {
+		return !!(
+			record &&
+			record.isLeaf &&
+			!record.isLeaf() &&
+			(record.expand || record.collapse)
+		);
+	},
+
+	getGridRecordLevel : function (record) {
+		var depth =
+			record &&
+			record.getDepth &&
+			record.getDepth();
+
+		return Math.max(1, depth || 1);
 	},
 
 	getGridFocusSelector : function (gridView) {
@@ -3229,5 +5200,5 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 
 	isUtilizationPanel : function (panel) {
 		return panel.isXType && panel.isXType("assignmentgridpanel");
-	}
+    }
 });

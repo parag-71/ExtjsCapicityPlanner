@@ -16670,37 +16670,3 @@ div.x-border-layout-ct {
 .x-panel-header-light-framed-collapsed-left-bc {
     height: 2px;
 }
-
-.x-keyboard-mode .nameColumnCls.x-column-header-focus,
-.x-keyboard-mode .nameColumnCls.x-column-header-focus:focus,
-.x-keyboard-mode .nameColumnCls.x-column-header-focus .x-column-header-inner,
-.x-keyboard-mode .nameColumnCls.x-column-header-focus .x-column-header-inner:focus,
-.lk-keyboard-focus-mode .nameColumnCls.x-column-header-focus,
-.lk-keyboard-focus-mode .nameColumnCls.x-column-header-focus:focus,
-.lk-keyboard-focus-mode .nameColumnCls.x-column-header-focus .x-column-header-inner,
-.lk-keyboard-focus-mode .nameColumnCls.x-column-header-focus .x-column-header-inner:focus {
-    outline: none !important;
-    box-shadow: none !important;
-}
-
-.x-keyboard-mode .nameColumnCls.x-column-header-focus .x-column-header-inner:after,
-.lk-keyboard-focus-mode .nameColumnCls.x-column-header-focus .x-column-header-inner:after {
-    content: none !important;
-    border: 0 !important;
-    outline: none !important;
-    box-shadow: none !important;
-}
-
-.x-keyboard-mode .nameColumnCls .addBtnTop:focus,
-.lk-keyboard-focus-mode .nameColumnCls .addBtnTop:focus {
-    outline: none !important;
-    box-shadow: none !important;
-}
-
-.x-keyboard-mode .nameColumnCls .addBtnTop:focus:before,
-.lk-keyboard-focus-mode .nameColumnCls .addBtnTop:focus:before {
-    display: inline-block;
-    outline: 2px solid #0078d7 !important;
-    outline-offset: 2px;
-    box-shadow: none !important;
-}

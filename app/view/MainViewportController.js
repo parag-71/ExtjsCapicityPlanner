@@ -589,7 +589,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
     initializeGlueforce: function () {
         var me = this;
         portfolio = glueforce.getWorkspaceConfig();
-		portfolio.workingHoursPerDay = JSON.parse(portfolio.workingHoursPerDay);
+        portfolio.workingHoursPerDay = JSON.parse(portfolio.workingHoursPerDay);
 
         if (portfolio.saveWorkspaceSnapshot != null) {
             if (portfolio.BaseURL == null || portfolio.BaseURL == '') {
@@ -1080,7 +1080,11 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 myURL = myURL + '&resources=' + JSON.stringify(LeankorApp.Gantt.objFilter.resourceTypeIds);
             }
         }
-        window.open(me.sanitizeValue(myURL), '_blank');
+        me.confirmMsgBox(Locale.LocaleName.OpenInNewTabConfirmation, function (btn) {
+            if (btn === 'yes') {
+                window.open(me.sanitizeValue(myURL), '_blank');
+            }
+        });
     },
 
     /**
@@ -1160,7 +1164,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
         store.removeAll();
         if (btype != 'ru') {
             store.proxy.data = [{
-                    "name":  Ext.htmlEncode(Locale.LocaleName.CapacityPlanning),
+                    "name": Ext.htmlEncode(Locale.LocaleName.CapacityPlanning),
                     "value": fld.config.resourceUtilization == true ? 'checked' : 'unchecked',
                     "id": 'resourceutilization'
                 }
@@ -1168,7 +1172,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
             // taskStore.load();
         } else {
             store.proxy.data = [{
-                    "name":  Ext.htmlEncode(Locale.LocaleName.ResourceSchedule),
+                    "name": Ext.htmlEncode(Locale.LocaleName.ResourceSchedule),
                     "value": fld.config.resourceUtilization == true ? 'checked' : 'unchecked',
                     "id": 'resourceschedule'
                 }
@@ -1234,6 +1238,14 @@ Ext.define('LeankorApp.view.MainViewportController', {
             activeDialogue.down('#cancel').setText(Locale.LocaleName.Cancel);
             activeDialogue.down('#cancel').setTooltip(Locale.LocaleName.Cancel);
             activeDialogue.tools['close'].setTooltip(Locale.LocaleName.CloseDialog);
+            LeankorApp.util.AccessibilityUtil.initCloseToolAccessibility(activeDialogue);
+            Ext.defer(function () {
+                var first = activeDialogue.form && activeDialogue.form.items &&
+                    activeDialogue.form.items.items && activeDialogue.form.items.items[0];
+                if (first && typeof first.focus === 'function') {
+                    first.focus();
+                }
+            }, 50);
             Ext.Array.forEach(activeDialogue.form.items.items, function (item, index) {
                 var field = item.name;
                 switch (field) {
@@ -1344,15 +1356,6 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 printbutton = btn[i];
                 printbutton.getItemId() == 'export' ? printbutton.addCls('saveBtnClss') : printbutton.addCls('cancelBtnClss');
             }
-            meMain.bindPrintPopupAccessibility(activeDialogue, {
-                label: Locale.LocaleName.PrintSetting
-            });
-            meMain.bindHeaderPopupKeys(activeDialogue, {
-                primaryButtonItemId: 'export',
-                escapeButtonItemId: 'cancel',
-                focusQuery: 'field',
-                focusTarget: combo
-            });
             combo.reset();
             break;
         case "Today":
@@ -1476,14 +1479,6 @@ Ext.define('LeankorApp.view.MainViewportController', {
         // var me = this,
         var storeTree = Ext.getStore('folderProjectTree'),
         me = this;
-        if (combo.leankorProjectFilterPopup && !combo.leankorProjectFilterPopup.destroyed) {
-            combo.leankorProjectFilterPopup.toFront();
-            me.focusHeaderPopup(combo.leankorProjectFilterPopup, {
-                focusTarget: combo
-            });
-            combo.reset();
-            return;
-        }
         storeTree.removeAll();
 
         var popup = Ext.create('Ext.tree.Panel', {
@@ -1504,7 +1499,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
             displayField: 'Name',
             allowDeselect: true,
             cls: 'mycustomTree',
-            draggable:true,
+            draggable: true,
+            constrain: true,
             dockedItems: [{
                     xtype: 'toolbar',
                     flex: 1,
@@ -1516,8 +1512,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
                     },
                     items: [{
                             xtype: 'button',
-                            text:  Ext.htmlEncode(Locale.LocaleName.Reset),
-                            tooltip:  Ext.htmlEncode(Locale.LocaleName.Reset),
+                            text: Ext.htmlEncode(Locale.LocaleName.Reset),
+                            tooltip: Ext.htmlEncode(Locale.LocaleName.Reset),
                             cls: 'deleteCardBtn',
                             handler: function () {
                                 var selectionModel = popup.getSelectionModel();
@@ -1527,8 +1523,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
                             }
                         }, {
                             xtype: 'button',
-                            text:  Ext.htmlEncode(Locale.LocaleName.Filter),
-                            tooltip:  Ext.htmlEncode(Locale.LocaleName.Filter),
+                            text: Ext.htmlEncode(Locale.LocaleName.Filter),
+                            tooltip: Ext.htmlEncode(Locale.LocaleName.Filter),
                             itemId: 'projectFilterButton',
                             cls: 'editPopUpSaveBtn',
                             handler: function () {
@@ -1594,26 +1590,64 @@ Ext.define('LeankorApp.view.MainViewportController', {
                     }
                 },
                 beforeclose: function () {
-                    combo.leankorProjectFilterPopup = null;
                     storeTree.getProxy().setData([]);
                     storeTree.removeAll();
                     storeTree.clearData();
                 }
             }
         });
-        combo.leankorProjectFilterPopup = popup;
-        me.bindResourceTypePopupAccessibility(popup, {
-            label: Locale.LocaleName.Projects,
-            recordLabelPrefix: (Locale.LocaleName && Locale.LocaleName.Project) || 'Project',
-            focusTarget: combo
-        });
-        me.bindHeaderPopupKeys(popup, {
-            primaryButtonItemId: 'projectFilterButton',
-            activateRows: true,
-            focusTarget: combo
-        });
-        this.updatePopupOverflow(popup);
+        LeankorApp.util.AccessibilityUtil.decoratePopup(popup);
+        LeankorApp.util.AccessibilityUtil.wireTreePopupAria(popup);
         popup.showBy(combo, 'tc-bc?');
+        LeankorApp.util.AccessibilityUtil.initPopupKeyboardNav(popup, combo, {
+            tabNavigatesRows: true
+        });
+        LeankorApp.util.AccessibilityUtil.wireTreeKeyboardNav(popup, {
+            enterTogglesFolder: true,
+            onActivate: function (rec) {
+                if (!rec || !Ext.isFunction(rec.isLeaf) || !rec.isLeaf()) {
+                    return;
+                }
+                var sm = popup.getSelectionModel && popup.getSelectionModel(),
+                saveBtn = popup.down && popup.down('#projectFilterButton');
+                if (sm) {
+                    if (Ext.isFunction(sm.isSelected) && !sm.isSelected(rec)) {
+                        sm.select(rec, true);
+                    } else if (!Ext.isFunction(sm.isSelected)) {
+                        sm.select(rec, true);
+                    }
+                }
+                Ext.defer(function () {
+                    if (!saveBtn || saveBtn.destroyed || saveBtn.isDestroyed) {
+                        return;
+                    }
+                    if (Ext.isFunction(saveBtn.focus)) {
+                        saveBtn.focus();
+                    } else if (saveBtn.el && saveBtn.el.dom && Ext.isFunction(saveBtn.el.dom.focus)) {
+                        saveBtn.el.dom.focus();
+                    }
+                }, 60);
+            },
+            beforeExpand: function (rec, doExpand) {
+                if (!rec.data.isTapped) {
+                    rec.data.isTapped = true;
+                    var port = {
+                        id: rec.data.Id,
+                        navigationVerb: 'ResourceManagementView'
+                    };
+                    popup.setLoading(Ext.htmlEncode(Locale.LocaleName.Loading) + '...');
+                    glueforce.getPortfolioHierarchy_List(port, function (result) {
+                        if (result.length) {
+                            rec.appendChild(result);
+                        }
+                        popup.setLoading(false);
+                        doExpand();
+                    });
+                } else {
+                    doExpand();
+                }
+            }
+        });
         popup.setLoading(Ext.htmlEncode(Locale.LocaleName.Loading) + '...');
         glueforce.getallParentFolder(function (result) {
             var dis = this;
@@ -1656,7 +1690,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
             meMain.popup = Ext.create('Ext.grid.Panel', {
                 hideHeaders: true,
                 width: 280,
-                title:  Ext.htmlEncode(Locale.LocaleName.ResourceType),
+                title: Ext.htmlEncode(Locale.LocaleName.ResourceType),
                 height: 400,
                 closable: true,
                 closeToolText: Ext.htmlEncode(Locale.LocaleName.CloseDialog),
@@ -1667,13 +1701,14 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 itemId: 'userListGrid',
                 store: 'pagingStoreOwner',
                 draggable: true,
+                constrain: true,
                 columns: [{
-                        header:  Ext.htmlEncode(Locale.LocaleName.ResourceTypes),
+                        header: Ext.htmlEncode(Locale.LocaleName.ResourceTypes),
                         dataIndex: 'name',
                         width: 300,
-						renderer : function(value, record, meta, rowI, colI) {
-							return Ext.htmlEncode(value);
-						}
+                        renderer: function (value, record, meta, rowI, colI) {
+                            return Ext.htmlEncode(value);
+                        }
                     }
                 ],
                 listeners: {
@@ -1749,6 +1784,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
                         items: [{
                                 iconAlign: 'left',
                                 iconCls: 'icon-previous',
+                                tooltip: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
+                                ariaLabel: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
                                 disabled: true,
                                 height: '22px',
                                 style: 'padding : 0px 7px !important',
@@ -1814,6 +1851,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
 
                                 iconAlign: 'right',
                                 iconCls: 'icon-next',
+                                tooltip: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
+                                ariaLabel: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
                                 disabled: true,
                                 height: '22px',
                                 itemId: 'userGridNextButton',
@@ -1855,22 +1894,10 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 ],
 
             });
-            meMain.bindResourceTypePopupAccessibility(meMain.popup, {
-                focusTarget: combo
-            });
-            meMain.bindHeaderPopupKeys(meMain.popup, {
-                primaryButtonItemId: 'resourceGridSelectButton',
-                activateRows: true,
-                focusQuery: 'textfield',
-                focusTarget: combo,
-                skipEmptyRowsOnTab: true
-            });
-            this.updatePopupOverflow(meMain.popup);
+            LeankorApp.util.AccessibilityUtil.decoratePopup(meMain.popup);
             meMain.popup.showBy(combo, 'br');
-            meMain.registerHeaderPopupTrap(meMain.popup);
-            Ext.defer(function () {
-                meMain.enforceHeaderPopupTrap(meMain.popup);
-            }, 75);
+            LeankorApp.util.AccessibilityUtil.initPopupKeyboardNav(meMain.popup, combo);
+            meMain.bindResourceGridCloseToolKeys(meMain.popup, combo);
             combo.reset();
             break;
         case "By Role Hierarchy":
@@ -1895,7 +1922,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 displayField: 'Name',
                 allowDeselect: true,
                 cls: 'mycustomTree_Role',
-                draggable:true,
+                draggable: true,
                 listeners: {
                     cellclick: function (me, td, cellIndex, record, tr, rowIndex, e, eOpts) {
                         var mee = this,
@@ -2509,23 +2536,68 @@ Ext.define('LeankorApp.view.MainViewportController', {
      * global method to show alert messages
      * @param {String}			str
      */
-    alertMsgBox: function (str) {
-        Ext.Msg.show({
-            message: '<div class="messagepopUpCls">' + Ext.htmlEncode(str) + '</div>',
+    messagePopUp: function (cfg) {
+        cfg = cfg || {};
+        if (cfg.msg && cfg.msg.indexOf('messagepopUpCls') === -1) {
+            cfg.msg = '<div class="messagepopUpCls">' + Ext.htmlEncode(cfg.msg) + '</div>';
+        }
+        if (cfg.message && cfg.message.indexOf('messagepopUpCls') === -1) {
+            cfg.message = '<div class="messagepopUpCls">' + Ext.htmlEncode(cfg.message) + '</div>';
+        }
+
+        Ext.applyIf(cfg, {
             cls: 'alertMsgCls',
+            modal: true,
             scrollable: null,
             closable: false,
-            buttons: Ext.Msg.OK,
-            buttonText: {
-                ok: Locale.LocaleName.OK
-            },
-            buttonUIs: {
-                ok: 'saveBtnClss'
-            },
-            buttonTips: {
-                yes: Locale.LocaleName.OK,
-            },
+            draggable: true,
+            closeAction: 'destroy',
             multiline: false
+        });
+
+        if (cfg.buttons === Ext.Msg.YESNO) {
+            Ext.applyIf(cfg, {
+                buttonText: {
+                    yes: Locale.LocaleName.Yes,
+                    no: Locale.LocaleName.No
+                },
+                buttonUIs: {
+                    yes: 'saveBtnClss',
+                    no: 'cancelBtnClss'
+                },
+                buttonTips: {
+                    yes: Locale.LocaleName.Yes,
+                    no: Locale.LocaleName.No
+                }
+            });
+        } else {
+            Ext.applyIf(cfg, {
+                buttons: Ext.Msg.OK,
+                buttonText: {
+                    ok: Locale.LocaleName.OK
+                },
+                buttonUIs: {
+                    ok: 'saveBtnClss'
+                },
+                buttonTips: {
+                    ok: Locale.LocaleName.OK
+                }
+            });
+        }
+
+        return Ext.Msg.show(cfg);
+    },
+    alertMsgBox: function (str) {
+        return this.messagePopUp({
+            message: str,
+            buttons: Ext.Msg.OK
+        });
+    },
+    confirmMsgBox: function (msg, fn) {
+        return this.messagePopUp({
+            msg: msg,
+            buttons: Ext.Msg.YESNO,
+            fn: fn
         });
     },
     /**
@@ -2560,7 +2632,11 @@ Ext.define('LeankorApp.view.MainViewportController', {
             return true;
         }
         var ganttPanel = LeankorApp.Gantt.gantt,
-        meMain = this;
+        meMain = this,
+        closeFocusTarget = e && e.target ? e.target : column;
+        if (closeFocusTarget && !closeFocusTarget.hasAttribute('tabindex')) {
+            closeFocusTarget.setAttribute('tabindex', '-1');
+        }
         resourceAssignment.count = 0;
         resourceAssignment.offset = 0;
         Ext.getStore('pagingStoreOwner').removeAll();
@@ -2570,8 +2646,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
             hideHeaders: true,
             width: 280,
 
-            title:  Ext.htmlEncode(Locale.LocaleName.ResourceTypes),
-            closeToolText:  Ext.htmlEncode(Locale.LocaleName.CloseDialog),
+            title: Ext.htmlEncode(Locale.LocaleName.ResourceTypes),
+            closeToolText: Ext.htmlEncode(Locale.LocaleName.CloseDialog),
 
             height: 400,
             closable: true,
@@ -2582,13 +2658,14 @@ Ext.define('LeankorApp.view.MainViewportController', {
             itemId: 'userListGrid',
             store: 'pagingStoreOwner',
             draggable: true,
+            constrain: true,
             columns: [{
                     header: 'Resource Type',
                     dataIndex: 'name',
                     width: 300,
-					renderer : function(value, record, meta, rowI, colI) {
-						return Ext.htmlEncode(value);
-					}
+                    renderer: function (value, record, meta, rowI, colI) {
+                        return Ext.htmlEncode(value);
+                    }
                 }
             ],
             listeners: {
@@ -2655,6 +2732,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
                     items: [{
                             iconAlign: 'left',
                             iconCls: 'icon-previous',
+                            tooltip: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
+                            ariaLabel: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
                             disabled: true,
                             height: '22px',
                             style: 'padding : 0px 7px !important',
@@ -2728,6 +2807,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
 
                             iconAlign: 'right',
                             iconCls: 'icon-next',
+                            tooltip: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
+                            ariaLabel: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
                             disabled: true,
                             height: '22px',
                             itemId: 'userGridNextButton',
@@ -2769,21 +2850,10 @@ Ext.define('LeankorApp.view.MainViewportController', {
             ],
 
         });
-        meMain.bindResourceTypePopupAccessibility(meMain.popup, {
-            focusTarget: column
-        });
-        meMain.bindHeaderPopupKeys(meMain.popup, {
-            primaryButtonItemId: 'resourceGridSelectButton',
-            activateRows: true,
-            focusQuery: 'textfield',
-            focusTarget: column
-        });
-        this.updatePopupOverflow(meMain.popup);
+        LeankorApp.util.AccessibilityUtil.decoratePopup(meMain.popup);
         meMain.popup.showBy(column, 'br');
-        meMain.registerHeaderPopupTrap(meMain.popup);
-        Ext.defer(function () {
-            meMain.enforceHeaderPopupTrap(meMain.popup);
-        }, 75);
+        LeankorApp.util.AccessibilityUtil.initPopupKeyboardNav(meMain.popup, closeFocusTarget);
+        meMain.bindResourceGridCloseToolKeys(meMain.popup, closeFocusTarget);
     },
 
     /**
@@ -2943,23 +3013,244 @@ Ext.define('LeankorApp.view.MainViewportController', {
         });
     },
 
+    bindResourceGridCloseToolKeys: function (popup, focusTarget) {
+        var me = this,
+        bindCloseTool,
+        bindRows,
+        syncRows,
+        focusRow,
+        getRows;
+
+        if (!popup || popup.leankorResourceGridCloseKeysBound) {
+            return;
+        }
+
+        popup.leankorResourceGridCloseKeysBound = true;
+        popup.leankorResourceGridCloseFocusTarget = focusTarget;
+
+        getRows = function () {
+            var view = popup.getView && popup.getView(),
+            rows;
+
+            if (!view || !view.el) {
+                return [];
+            }
+
+            rows = view.el.select(view.itemSelector || '.x-grid-item').elements || [];
+            return Ext.Array.filter(rows, function (row) {
+                return row && row.offsetParent !== null;
+            });
+        };
+
+        focusRow = function (row) {
+            var view = popup.getView && popup.getView();
+
+            if (!row || !view || !view.el) {
+                return false;
+            }
+
+            view.el.select('.lk-popup-row-focused').removeCls('lk-popup-row-focused');
+            Ext.fly(row).addCls('lk-popup-row-focused');
+            row.setAttribute('tabindex', '0');
+            row.focus();
+            return true;
+        };
+
+        syncRows = function () {
+            var view = popup.getView && popup.getView(),
+            rows = getRows(),
+            selectionModel = popup.getSelectionModel && popup.getSelectionModel(),
+            selected = selectionModel && selectionModel.getSelection && selectionModel.getSelection(),
+            selectedRecord = selected && selected[0],
+            selectedRow = selectedRecord && view && view.getNode && view.getNode(selectedRecord);
+
+            if (view && view.el && view.el.dom) {
+                view.el.dom.setAttribute('tabindex', '-1');
+            }
+
+            Ext.Array.forEach(rows, function (row) {
+                row.setAttribute('tabindex', '-1');
+                row.setAttribute('role', 'option');
+            });
+
+            if (selectedRow && selectedRow.offsetParent !== null) {
+                selectedRow.setAttribute('tabindex', '0');
+            } else if (rows[0]) {
+                rows[0].setAttribute('tabindex', '0');
+            }
+        };
+
+        bindRows = function () {
+            var view = popup.getView && popup.getView(),
+            store = popup.getStore && popup.getStore();
+
+            if (!view || !view.el || view.leankorResourceGridRowsBound) {
+                syncRows();
+                return;
+            }
+
+            view.leankorResourceGridRowsBound = true;
+            syncRows();
+            view.el.on('focus', function () {
+                var rows = getRows(),
+                activeRow = view.el.down('.lk-popup-row-focused', true) || rows[0];
+
+                Ext.defer(function () {
+                    focusRow(activeRow);
+                }, 1);
+            });
+            view.el.on('keydown', function (event, target) {
+                var key = event.getKey && event.getKey(),
+                downKey = Ext.EventObject.DOWN || 40,
+                upKey = Ext.EventObject.UP || 38,
+                homeKey = Ext.EventObject.HOME || 36,
+                endKey = Ext.EventObject.END || 35,
+                enterKey = Ext.EventObject.ENTER || 13,
+                spaceKey = Ext.EventObject.SPACE || 32,
+                rows = getRows(),
+                targetEl = target && Ext.fly(target),
+                row = targetEl && (targetEl.is(view.itemSelector || '.x-grid-item')
+                         ? target : targetEl.up(view.itemSelector || '.x-grid-item', view.el, true)),
+                index = Ext.Array.indexOf(rows, row),
+                selectionModel,
+                record;
+
+                if (!rows.length) {
+                    return true;
+                }
+
+                if (index < 0) {
+                    index = 0;
+                }
+
+                if (key === downKey || key === upKey || key === homeKey || key === endKey) {
+                    event.stopEvent();
+                    if (key === downKey) {
+                        index = Math.min(rows.length - 1, index + 1);
+                    } else if (key === upKey) {
+                        index = Math.max(0, index - 1);
+                    } else if (key === homeKey) {
+                        index = 0;
+                    } else {
+                        index = rows.length - 1;
+                    }
+                    focusRow(rows[index]);
+                    return false;
+                }
+
+                if (key === enterKey || key === spaceKey) {
+                    selectionModel = popup.getSelectionModel && popup.getSelectionModel();
+                    record = view.getRecord && view.getRecord(row);
+                    if (selectionModel && record) {
+                        event.stopEvent();
+                        if (selectionModel.isSelected && selectionModel.isSelected(record)) {
+                            selectionModel.deselect(record);
+                        } else {
+                            selectionModel.select(record, true);
+                        }
+                        focusRow(row);
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+
+            view.on('refresh', syncRows);
+            view.on('itemadd', syncRows);
+            view.on('itemupdate', syncRows);
+            if (store && store.on) {
+                store.on('load', syncRows);
+                store.on('datachanged', syncRows);
+            }
+        };
+
+        bindCloseTool = function () {
+            if (!popup.el || !popup.el.dom) {
+                return;
+            }
+
+            popup.el.select('.x-tool-close, .x-tool-close .x-tool-tool-el, .x-tool-close .x-tool-img').each(function (toolEl) {
+                if (!toolEl || !toolEl.dom || toolEl.dom.leankorResourceGridCloseKeyBound) {
+                    return;
+                }
+
+                toolEl.dom.leankorResourceGridCloseKeyBound = true;
+                toolEl.dom.setAttribute('tabindex', '0');
+                toolEl.dom.setAttribute('role', 'button');
+                toolEl.on('keydown', function (event) {
+                    var key = event.getKey && event.getKey(),
+                    enterKey = Ext.EventObject.ENTER || 13,
+                    spaceKey = Ext.EventObject.SPACE || 32;
+
+                    if (key !== enterKey && key !== spaceKey) {
+                        return true;
+                    }
+
+                    event.stopEvent();
+                    if (popup.close) {
+                        popup.close();
+                    } else if (popup.hide) {
+                        popup.hide();
+                    }
+                    me.restoreResourceGridCloseFocus(popup.leankorResourceGridCloseFocusTarget);
+                    return false;
+                });
+            });
+        };
+
+        popup.on({
+            afterrender: function () {
+                bindCloseTool();
+                bindRows();
+            },
+            show: function () {
+                bindCloseTool();
+                bindRows();
+            },
+            close: function () {
+                me.restoreResourceGridCloseFocus(popup.leankorResourceGridCloseFocusTarget);
+            },
+            scope: me
+        });
+
+        if (popup.rendered) {
+            bindCloseTool();
+            bindRows();
+        }
+    },
+
+    restoreResourceGridCloseFocus: function (focusTarget) {
+        Ext.defer(function () {
+            if (!focusTarget) {
+                return;
+            }
+
+            if (focusTarget.isComponent && !focusTarget.destroyed && focusTarget.focus) {
+                focusTarget.focus();
+            } else if (focusTarget.focus && document.documentElement.contains(focusTarget)) {
+                focusTarget.focus();
+            }
+        }, 50);
+    },
+
     updatePopupOverflow: function (editor, originalHeight) {
 
-        if (!editor || editor.destroyed) return;
-    
+        if (!editor || editor.destroyed)
+            return;
+
         const viewportHeight = Ext.Element.getViewportHeight();
         const buffer = 20;
-    
+
         // Store original maxHeight once
         if (!editor._originalMaxHeight) {
             editor._originalMaxHeight = editor.maxHeight || editor.height;
         }
-    
+
         const newHeight = Math.min(
-            editor._originalMaxHeight,
-            viewportHeight - buffer
-        );
-    
+                editor._originalMaxHeight,
+                viewportHeight - buffer);
+
         // Only update if meaningful change
         if (Math.abs(editor.height - newHeight) > 2) {
             editor.setHeight(newHeight);

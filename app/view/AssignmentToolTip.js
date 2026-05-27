@@ -93,7 +93,24 @@ Ext.define('LeankorApp.view.AssignmentToolTip', {
 		userAvailabilityInfo = userAvailabilityInfo.replace('{IntervalStart}', Ext.Date.format(intervalStart, 'M d'));
 		userAvailabilityInfo = userAvailabilityInfo.replace('{IntervalEnd}', Ext.Date.format(intervalEnd, 'M d'));
 		this.setTitle(userAvailabilityInfo);
-       
+
         this.chartStore.loadData(data);
+
+        var chart = this.down('cartesian'),
+            hrs = (Locale.LocaleName && Locale.LocaleName.Hrs) || 'hrs',
+            parts = [];
+
+        Ext.Array.forEach(data, function (row) {
+            parts.push(Ext.String.htmlEncode(row.name) + ' ' + row.amount + ' ' + hrs);
+        });
+
+        if (chart && Ext.isFunction(chart.setAriaDescription)) {
+            chart.setAriaDescription(userAvailabilityInfo + (parts.length ? ': ' + parts.join(', ') : ''));
+        }
+
+        if (this.el && this.el.dom) {
+            this.el.dom.setAttribute('role', 'tooltip');
+            this.el.dom.setAttribute('aria-label', String(userAvailabilityInfo).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim());
+        }
      }
 });

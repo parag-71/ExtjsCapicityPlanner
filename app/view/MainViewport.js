@@ -18,7 +18,8 @@ Ext.define('LeankorApp.view.MainViewport', {
 		'LeankorApp.view.MainViewportController',
 		'LeankorApp.view.ControlHeader',
 		'LeankorApp.view.AssignmentGrid',
-		'LeankorApp.view.ResourceSchedule'
+		'LeankorApp.view.ResourceSchedule',
+		'LeankorApp.util.AccessibilityUtil'
 	],
 	controller: 'mainviewport',
 	viewModel: 'mainviewport',
@@ -32,20 +33,7 @@ Ext.define('LeankorApp.view.MainViewport', {
 	In Gantt Panel we will customize some ZoomToFit level settings to work with our presets and requirements;
 	 */
 	initComponent: function () {
-		// WCAG 1.4.10 Reflow: shared helper to constrain a window/popup to
-		// the visible viewport (accounts for scroll offset when zoomed).
-		LeankorApp.wcagConstrainToViewport = function (win) {
-			if (!win) return;
-			var scrollX = window.pageXOffset || 0;
-			var scrollY = window.pageYOffset || 0;
-			var pos = win.getPosition();
-			var maxX = scrollX + window.innerWidth - win.getWidth() - 5;
-			var maxY = scrollY + window.innerHeight - win.getHeight() - 5;
-			win.setPosition(
-				Math.max(scrollX, Math.min(pos[0], maxX)),
-				Math.max(scrollY, Math.min(pos[1], maxY))
-			);
-		};
+		LeankorApp.util.AccessibilityUtil.bootReflowOverrides();
 
 		// WCAG 1.4.10 Reflow: preserve the full layout width when the browser
 		// is zoomed in.  innerWidth shrinks with zoom; outerWidth does not.
@@ -53,35 +41,10 @@ Ext.define('LeankorApp.view.MainViewport', {
 		// In an iframe, outerWidth reflects the top-level browser window (not the
 		// iframe), so skip it — otherwise the layout is wider than the iframe and
 		// the rightmost toolbar icons get clipped / a spurious scrollbar appears.
-		var isInIframe = window !== window.parent;
-		var outerHint = (!isInIframe && window.outerWidth > 0) ? window.outerWidth - 16 : 0;
-		var MIN_VIEWPORT_WIDTH = Math.max(window.innerWidth, outerHint, 1024);
-
-		// Make ExtJS always lay out at the full width so panels fill the space
-		var origGetViewportWidth = Ext.Element.getViewportWidth;
-		Ext.Element.getViewportWidth = function () {
-			return Math.max(origGetViewportWidth.call(this), MIN_VIEWPORT_WIDTH);
-		};
-
-		// Pass the value to CSS and toggle a class for the scrollbar rules
-		document.documentElement.style.setProperty(
-			'--min-viewport-width', MIN_VIEWPORT_WIDTH + 'px'
-		);
-		function updateZoomOverflow() {
-			var cl = document.documentElement.classList;
-			if (window.innerWidth < MIN_VIEWPORT_WIDTH) {
-				cl.add('x-zoom-overflow');
-			} else {
-				cl.remove('x-zoom-overflow');
-			}
-		}
-		window.addEventListener('resize', updateZoomOverflow);
-		updateZoomOverflow();
-
 		// WCAG 1.4.10 Reflow (vertical): constrain floating components
 		// (windows, menus) so they never exceed the visible viewport height.
 		// Uses Ext.override + callParent to avoid prototype stacking issues.
-		if (!Ext.window.Window._wcagVerticalApplied) {
+		if (false && !Ext.window.Window._wcagVerticalApplied) {
 			Ext.window.Window._wcagVerticalApplied = true;
 
 			Ext.override(Ext.window.Window, {
@@ -463,6 +426,7 @@ Ext.define('LeankorApp.view.MainViewport', {
 			]
 		});
 		me.callParent(arguments);
+		LeankorApp.util.AccessibilityUtil.insertSkipLink(partnerTimelinePanel);
 	}
 
 });

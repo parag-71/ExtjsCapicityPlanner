@@ -197,7 +197,8 @@ Ext.define("LeankorApp.view.ResourceSchedule", {
 												xtype: 'button',
 												iconCls: 'chatterButtonCls',
 												cls: 'toolbar-custom-btn',
-												tooltip: null,
+												tooltip: Ext.htmlEncode(Locale.LocaleName.FollowOnChatter || Locale.LocaleName.Discuss),
+												ariaLabel: Ext.htmlEncode(Locale.LocaleName.FollowOnChatter || Locale.LocaleName.Discuss),
 												listeners: {
 													click: function (me, e, eOpts) {
 														var isLightningUrl = Ext.urlDecode(decodeURIComponent(window.location.search.substring(1)));
@@ -213,7 +214,7 @@ Ext.define("LeankorApp.view.ResourceSchedule", {
 											}
 										],
 										itemId: 'myChaterWindow',
-										html: ['<iframe height="100%" width=100% src="' + myURL + '"></iframe>']
+										html: ['<iframe title="' + Ext.htmlEncode((Locale.LocaleName && (Locale.LocaleName.FollowOnChatter || Locale.LocaleName.Discuss)) || 'Discussion') + ': ' + Ext.htmlEncode(eventRecord.data.Name || '') + '" height="100%" width=100% src="' + myURL + '"></iframe>']
 									});
 								oDialog.show();
 							}

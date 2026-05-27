@@ -1,12 +1,12 @@
 $base-gray: #1b1d1f;
 $gray: #545658;
-$light-gray: #9A9B9C;
+$light-gray: #646F76;
 $lighter-gray: #DEE1E4;
 $lightest-gray: #F7F8F9;
-$leankor-orange: #ED6C00;
+$leankor-orange: #BB4513;
 $leankor-orange-RL: #F6BF90;
 $leankor-orange-RB: #F48F3B;
-$green:#6DC762;
+$green:#41833A;
 $green-RL:#D9F2D6;
 $green-RB:#8EDD84;
 $highlight-yellow: #FDC685;
@@ -18,6 +18,7 @@ $dead-red-RB: #F8A0A0;
 $leankor-blue: #00A1E0;
 $leankor-blue-RL: #B4E9FD;
 $leankor-blue-RB: #35BCF0;
+$keyboard-focus-border-color: #0078d7;
 
 $activity-bar-color: $leankor-blue-RB;
 $folder-bar-color: $green-RB;
@@ -769,7 +770,7 @@ $font-family: dynamic('Open Sans', 'Helvetica Neue', helvetica, arial, verdana, 
         border-color: $component-border-color;
     }
     .x-form-text-default {
-        color: #9d9d9d !important;
+        color: #1b1d1f !important;
         padding: 5px;
         background-color: transparent;
         font: 400 13px/21px 'Open Sans','Helvetica Neue',helvetica,arial,verdana,sans-serif;
@@ -806,7 +807,7 @@ $font-family: dynamic('Open Sans', 'Helvetica Neue', helvetica, arial, verdana, 
         border-color: $component-border-color;
     }
     .x-form-text-default {
-        color: #9d9d9d !important;
+        color: #1b1d1f !important;
         padding: 5px;
         background-color: transparent;
         font: 400 13px/21px 'Open Sans','Helvetica Neue',helvetica,arial,verdana,sans-serif;
@@ -837,7 +838,7 @@ $font-family: dynamic('Open Sans', 'Helvetica Neue', helvetica, arial, verdana, 
 		
     }
     .x-form-text-default {
-        color: #9d9d9d !important;
+        color: #1b1d1f !important;
         background-color: transparent;
         font: 400 13px/21px 'Open Sans','Helvetica Neue',helvetica,arial,verdana,sans-serif;
         min-height: 30px;
@@ -1497,7 +1498,7 @@ input[type="radio"] {
 .saveBtnClssCross {
     @extend .sactionbtn;
     background: #e1e2e2 !important;
-    border: 2px solid #0078d7 !important;
+    border: 2px solid $keyboard-focus-border-color !important;
     &.x-button-pressing {
         @extend .sactionbtn;
     }
@@ -2072,11 +2073,25 @@ input[type=text]::-ms-clear {
 /* Leankor accessibility and keyboard focus support */
 .lk-keyboard-focus-mode .sch-event.lk-board-event-focused,
 .lk-keyboard-focus-mode .gnt-resource-utilization-interval:focus,
-.lk-keyboard-focus-mode .addBtnTop:focus {
-    outline: 2px solid #0078d7 !important;
+.lk-keyboard-focus-mode .addBtnTop:focus,
+.lk-keyboard-focus-mode .x-splitter:focus,
+.lk-keyboard-focus-mode .x-splitter-focus,
+.x-keyboard-mode .x-splitter:focus,
+.x-keyboard-mode .x-splitter-focus {
+    outline: 2px solid $keyboard-focus-border-color !important;
     outline-offset: 2px;
     box-shadow: none;
     z-index: 5;
+}
+
+.lk-keyboard-focus-mode .x-splitter:focus,
+.lk-keyboard-focus-mode .x-splitter-focus,
+.x-keyboard-mode .x-splitter:focus,
+.x-keyboard-mode .x-splitter-focus {
+    outline-offset: -1px;
+    box-sizing: border-box;
+    overflow: hidden;
+    z-index: 50;
 }
 .lk-keyboard-focus-mode
     .gnt-resourceutilizationpanel
@@ -2086,7 +2101,9 @@ input[type=text]::-ms-clear {
 }
 .sch-event:focus,
 .gnt-resource-utilization-interval:focus,
-.addBtnTop:focus {
+.addBtnTop:focus,
+.x-splitter:focus,
+.x-splitter-focus {
     outline: none !important;
     box-shadow: none;
 }
@@ -2096,7 +2113,7 @@ input[type=text]::-ms-clear {
 }
 .lk-keyboard-focus-mode .backGroudCls .lk-board-row-focused,
 .lk-keyboard-focus-mode .lk-board-row-focused {
-    outline: 2px solid #0078d7 !important;
+    outline: 2px solid $keyboard-focus-border-color !important;
     outline-offset: -2px;
 }
 .lk-keyboard-focus-mode .x-window .x-tool-close:focus,
@@ -2117,7 +2134,7 @@ input[type=text]::-ms-clear {
 .lk-keyboard-focus-mode .resourceGridStyleCls .x-tool[role="button"]:focus,
 .x-keyboard-mode .x-tool-close:focus,
 .x-keyboard-mode .x-tool-close.x-tool-focus {
-    outline: 2px solid #0078d7 !important;
+    outline: 2px solid $keyboard-focus-border-color !important;
     outline-offset: -2px;
     box-shadow: none !important;
 }
@@ -2145,7 +2162,7 @@ input[type=text]::-ms-clear {
 .lk-keyboard-focus-mode .x-window .x-btn-button:focus,
 .lk-keyboard-focus-mode .x-window .x-tool:focus,
 .lk-keyboard-focus-mode .x-window .x-tool-tool-el:focus {
-    outline: 2px solid #0078d7 !important;
+    outline: 2px solid $keyboard-focus-border-color !important;
     outline-offset: -2px;
     box-shadow: none !important;
     position: relative;
@@ -2187,7 +2204,7 @@ body:not(.lk-keyboard-focus-mode) .x-window .x-tool-tool-el:focus {
 .lk-keyboard-focus-mode .x-menu-body:focus,
 .lk-keyboard-focus-mode [class*="scroller"]:focus,
 .lk-keyboard-focus-mode [class*="scrollbar"]:focus {
-    outline: 2px solid #0078d7 !important;
+    outline: 2px solid $keyboard-focus-border-color !important;
     outline-offset: -2px;
     box-shadow: none !important;
     position: relative;
@@ -2233,7 +2250,7 @@ body:not(.lk-keyboard-focus-mode) [class*="scrollbar"]:focus {
 }
 .lk-keyboard-focus-mode .backGroudCls .lk-board-row-focused,
 .lk-keyboard-focus-mode .lk-board-row-focused {
-    outline: 2px solid #0078d7 !important;
+    outline: 2px solid $keyboard-focus-border-color !important;
     outline-offset: -2px;
     box-shadow: none !important;
     position: relative;
@@ -2297,7 +2314,7 @@ body.lk-keyboard-focus-mode .mycustomTree {
     .x-btn:focus,
     .x-btn-focus,
     .x-btn-button:focus {
-        outline: 2px solid #0078d7 !important;
+        outline: 2px solid $keyboard-focus-border-color !important;
         outline-offset: -2px;
         position: relative;
         z-index: 2;
@@ -2315,7 +2332,7 @@ body.lk-keyboard-focus-mode .mycustomTree {
     }
 
     .x-btn:focus-within {
-        outline: 2px solid #0078d7 !important;
+        outline: 2px solid $keyboard-focus-border-color !important;
         outline-offset: -2px;
     }
 
@@ -2330,7 +2347,7 @@ body.lk-keyboard-focus-mode .mycustomTree {
     .x-grid-item:focus .x-grid-cell-inner,
     .x-grid-row:focus .x-grid-cell-inner,
     .x-grid-cell-inner:focus {
-        outline: 2px solid #0078d7 !important;
+        outline: 2px solid $keyboard-focus-border-color !important;
         outline-offset: -2px;
         display: block;
         width: 100%;
@@ -2341,7 +2358,7 @@ body.lk-keyboard-focus-mode .mycustomTree {
     .x-tool-close:focus,
     .x-tool-close.x-tool-focus,
     .x-tool-close[role="button"]:focus {
-        outline: 2px solid #0078d7 !important;
+        outline: 2px solid $keyboard-focus-border-color !important;
         outline-offset: -2px;
         box-shadow: none !important;
         position: relative;
@@ -2370,7 +2387,7 @@ body.lk-keyboard-focus-mode .resourceGridStyleCls {
     .x-btn-button:focus,
     .x-form-text:focus,
     input:focus {
-        outline: 2px solid #0078d7 !important;
+        outline: 2px solid $keyboard-focus-border-color !important;
         outline-offset: -2px;
     }
 
@@ -2385,7 +2402,7 @@ body.lk-keyboard-focus-mode .resourceGridStyleCls {
     .x-grid-row:focus .x-grid-cell-inner,
     .x-grid-cell:focus .x-grid-cell-inner,
     .x-grid-cell-inner:focus {
-        outline: 2px solid #0078d7 !important;
+        outline: 2px solid $keyboard-focus-border-color !important;
         outline-offset: -2px;
         display: block;
         width: 100%;
@@ -2418,7 +2435,7 @@ body.lk-keyboard-focus-mode {
 
     .nameColumnCls .addBtnTop:focus:before {
         display: inline-block;
-        outline: 2px solid #0078d7 !important;
+        outline: 2px solid $keyboard-focus-border-color !important;
         outline-offset: 2px;
         box-shadow: none !important;
     }
@@ -2535,7 +2552,7 @@ body:not(.lk-keyboard-focus-mode) .resourceGridStyleCls .x-grid-cell:focus {
     .lk-control-header-focusable.x-btn-focus:after,
     .lk-control-header-focusable.x-btn:focus-within:after {
         content: "";
-        border: 2px solid #0078d7;
+        border: 2px solid $keyboard-focus-border-color;
         box-sizing: border-box;
         height: 32px;
         left: 0;
@@ -2554,13 +2571,19 @@ body:not(.lk-keyboard-focus-mode) .resourceGridStyleCls .x-grid-cell:focus {
         box-shadow: none !important;
     }
 
-    .lk-control-header-focusable.x-form-field-focus .x-form-trigger-wrap-default,
-    .lk-control-header-focusable.x-form-focus .x-form-trigger-wrap-default,
-    .lk-control-header-focusable .x-form-trigger-wrap-default:focus-within,
     .lk-control-header-focusable .x-form-trigger-wrap-focus {
-        outline: 2px solid #0078d7 !important;
+        outline: none !important;
+        border-color: $lighter-gray !important;
+        box-shadow: none !important;
+    }
+
+    .lk-control-header-focusable .x-form-trigger-wrap-default:focus-within,
+    .lk-control-header-focusable.x-form-field-focus:focus-within .x-form-trigger-wrap-default,
+    .lk-control-header-focusable.x-form-focus:focus-within .x-form-trigger-wrap-default,
+    .lk-control-header-focusable:focus-within .x-form-trigger-wrap-focus {
+        outline: 2px solid $keyboard-focus-border-color !important;
         outline-offset: -2px;
-        border-color: #0078d7 !important;
+        border-color: $keyboard-focus-border-color !important;
         box-shadow: none !important;
         position: relative;
         z-index: 6;
@@ -2577,7 +2600,7 @@ body:not(.lk-keyboard-focus-mode) .resourceGridStyleCls .x-grid-cell:focus {
 }
 .lk-keyboard-focus-mode .nameColumnCls .addBtnTop:focus:before {
     display: inline-block;
-    outline: 2px solid #0078d7 !important;
+    outline: 2px solid $keyboard-focus-border-color !important;
     outline-offset: 2px;
     box-shadow: none !important;
 }
@@ -2628,6 +2651,14 @@ body:not(.lk-keyboard-focus-mode)
     box-shadow: none !important;
 }
 
+.lk-control-header .lk-control-header-focusable.x-form-field-focus:not(:focus-within) .x-form-trigger-wrap-default,
+.lk-control-header .lk-control-header-focusable.x-form-focus:not(:focus-within) .x-form-trigger-wrap-default,
+.lk-control-header .lk-control-header-focusable:not(:focus-within) .x-form-trigger-wrap-focus {
+    outline: none !important;
+    border-color: $lighter-gray !important;
+    box-shadow: none !important;
+}
+
 body.lk-keyboard-focus-mode .resourceGridStyleCls {
     .x-panel-body-default,
     .x-grid-body,
@@ -2667,7 +2698,7 @@ body.lk-keyboard-focus-mode .resourceGridStyleCls {
 .lk-keyboard-focus-mode .radioButtonCls .x-boundlist-item-over,
 .x-keyboard-mode .radioButtonCls .x-boundlist-item-focused,
 .x-keyboard-mode .radioButtonCls .x-boundlist-item-over {
-    outline: 2px solid #0078d7 !important;
+    outline: 2px solid $keyboard-focus-border-color !important;
     outline-offset: -2px !important;
     box-shadow: none !important;
     position: relative;
@@ -2675,12 +2706,28 @@ body.lk-keyboard-focus-mode .resourceGridStyleCls {
 }
 .lk-keyboard-focus-mode .lk-setting-combo-list .x-boundlist-item-focused,
 .lk-keyboard-focus-mode .lk-setting-combo-list .x-boundlist-item-over,
-.lk-keyboard-focus-mode .lk-setting-combo-list .x-boundlist-selected,
 .x-keyboard-mode .lk-setting-combo-list .x-boundlist-item-focused,
-.x-keyboard-mode .lk-setting-combo-list .x-boundlist-item-over,
+.x-keyboard-mode .lk-setting-combo-list .x-boundlist-item-over {
+    outline: none !important;
+    box-shadow: inset 0 0 0 2px $keyboard-focus-border-color !important;
+    box-sizing: border-box;
+    position: relative;
+    z-index: 2;
+}
+.lk-keyboard-focus-mode .lk-setting-combo-list .x-boundlist-selected,
 .x-keyboard-mode .lk-setting-combo-list .x-boundlist-selected {
     outline: none !important;
-    box-shadow: inset 0 0 0 2px #0078d7 !important;
+    box-shadow: none !important;
+}
+.lk-view-combo-list .x-boundlist-item:focus,
+.lk-view-combo-list .x-boundlist-item-focused,
+.lk-view-combo-list .x-boundlist-item-focused:focus,
+.lk-keyboard-focus-mode .lk-view-combo-list .x-boundlist-item:focus,
+.lk-keyboard-focus-mode .lk-view-combo-list .x-boundlist-item-focused,
+.x-keyboard-mode .lk-view-combo-list .x-boundlist-item:focus,
+.x-keyboard-mode .lk-view-combo-list .x-boundlist-item-focused {
+    outline: none !important;
+    box-shadow: inset 0 0 0 2px $keyboard-focus-border-color !important;
     box-sizing: border-box;
     position: relative;
     z-index: 2;
@@ -2714,7 +2761,7 @@ body.lk-keyboard-focus-mode .resourceGridStyleCls {
 .lk-keyboard-focus-mode .x-window .x-btn:focus-within,
 body.lk-keyboard-focus-mode .resourceGridStyleCls .x-btn:focus-within,
 body.lk-keyboard-focus-mode .mycustomTree .x-btn:focus-within {
-    outline: 2px solid #0078d7 !important;
+    outline: 2px solid $keyboard-focus-border-color !important;
     outline-offset: -2px;
     box-shadow: none !important;
     position: relative;
@@ -2770,7 +2817,7 @@ body.lk-keyboard-focus-mode .mycustomTree .x-btn:focus-within .x-btn-wrap:focus 
 .lk-keyboard-focus-mode [class*="scroller"]:focus-within,
 .lk-keyboard-focus-mode [class*="scrollbar"]:focus,
 .lk-keyboard-focus-mode [class*="scrollbar"]:focus-within {
-    border: 2px solid #0078d7 !important;
+    border: 2px solid $keyboard-focus-border-color !important;
     box-shadow: none !important;
     box-sizing: border-box;
     outline: none !important;
@@ -2780,10 +2827,14 @@ body.lk-keyboard-focus-mode .mycustomTree .x-btn:focus-within .x-btn-wrap:focus 
 
 .x-keyboard-mode .nameColumnCls.x-column-header-focus,
 .x-keyboard-mode .nameColumnCls.x-column-header-focus:focus,
+.x-keyboard-mode .nameColumnCls:focus,
+.x-keyboard-mode .nameColumnCls:focus-within,
 .x-keyboard-mode .nameColumnCls.x-column-header-focus .x-column-header-inner,
 .x-keyboard-mode .nameColumnCls.x-column-header-focus .x-column-header-inner:focus,
 .lk-keyboard-focus-mode .nameColumnCls.x-column-header-focus,
 .lk-keyboard-focus-mode .nameColumnCls.x-column-header-focus:focus,
+.lk-keyboard-focus-mode .nameColumnCls:focus,
+.lk-keyboard-focus-mode .nameColumnCls:focus-within,
 .lk-keyboard-focus-mode .nameColumnCls.x-column-header-focus .x-column-header-inner,
 .lk-keyboard-focus-mode .nameColumnCls.x-column-header-focus .x-column-header-inner:focus {
     outline: none !important;
@@ -2791,7 +2842,11 @@ body.lk-keyboard-focus-mode .mycustomTree .x-btn:focus-within .x-btn-wrap:focus 
 }
 
 .x-keyboard-mode .nameColumnCls.x-column-header-focus .x-column-header-inner:after,
-.lk-keyboard-focus-mode .nameColumnCls.x-column-header-focus .x-column-header-inner:after {
+.x-keyboard-mode .nameColumnCls:focus .x-column-header-inner:after,
+.x-keyboard-mode .nameColumnCls:focus-within .x-column-header-inner:after,
+.lk-keyboard-focus-mode .nameColumnCls.x-column-header-focus .x-column-header-inner:after,
+.lk-keyboard-focus-mode .nameColumnCls:focus .x-column-header-inner:after,
+.lk-keyboard-focus-mode .nameColumnCls:focus-within .x-column-header-inner:after {
     content: none !important;
     border: 0 !important;
     outline: none !important;
@@ -2802,14 +2857,44 @@ body.lk-keyboard-focus-mode .mycustomTree .x-btn:focus-within .x-btn-wrap:focus 
 .lk-keyboard-focus-mode .nameColumnCls .addBtnTop:focus {
     outline: none !important;
     box-shadow: none !important;
+    position: relative;
+    z-index: 6;
 }
 
 .x-keyboard-mode .nameColumnCls .addBtnTop:focus:before,
 .lk-keyboard-focus-mode .nameColumnCls .addBtnTop:focus:before {
     display: inline-block;
-    outline: 2px solid #0078d7 !important;
+    outline: 2px solid $keyboard-focus-border-color !important;
     outline-offset: 2px;
     box-shadow: none !important;
+}
+
+.sr-only {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+.skip-link {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 100000;
+    padding: 8px 12px;
+    background: #fff;
+    color: #111;
+    border: 2px solid $keyboard-focus-border-color;
+    transform: translateY(-150%);
+}
+
+.skip-link:focus {
+    transform: translateY(0);
 }
 
 
