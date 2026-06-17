@@ -108,9 +108,15 @@ Ext.define('LeankorApp.view.AssignmentGrid', {
 		var me = this;
 		me.callParent(arguments);
 		if (me.el) {
-			me.el.dom.setAttribute('aria-label', me.ariaLabel);
+			me.el.dom.setAttribute('aria-label', me.ariaLabel ||
+				(Locale.LocaleName && Locale.LocaleName.ResourceUtilization) || 'Assignment grid');
 		}
-		me.getColumns()[0].setText('<span class ="addBtnTop" name = "addButton"></span><span style = "margin-left : 10px">'+Ext.htmlEncode(Locale.LocaleName.Name)+'</span>');
+		// addBtnTop is a keyboard-reachable activation point (tabindex/role/label).
+		me.getColumns()[0].setText(
+			'<span class="addBtnTop" name="addButton" tabindex="0" role="button" aria-label="' +
+			Ext.htmlEncode((Locale.LocaleName && Locale.LocaleName.AddResource) || 'Add Resource') +
+			'"></span><span style="margin-left: 10px">' + Ext.htmlEncode(Locale.LocaleName.Name) + '</span>'
+		);
 		me.tip = new LeankorApp.view.AssignmentToolTip({
 				target: me.getSchedulingView().el,
 				panel: me
@@ -120,9 +126,146 @@ Ext.define('LeankorApp.view.AssignmentGrid', {
 			me.getColumns()[0].initialConfig.header = '';
 			me.getColumns()[0].initialConfig.text = '';
 		}
-		LeankorApp.util.AccessibilityUtil.enableBoardFocus(me);
 
+		// Grid structural ARIA (roles + aria-row/colindex), kept in sync on change.
+		LeankorApp.util.AccessibilityUtil.wireGridAriaIndices(me);
+		// Keyboard nav — ↑/↓ rows, Home/End, and ←/→ expand/collapse of tree
+		// branches. Bound on the panel; focus + the arrow handler live on the NAME
+		// COLUMN (locked tree grid). We intentionally do NOT call enableBoardFocus:
+		// it routes row focus to the timeline view, which is what made ←/→ require
+		// two presses and the border jump. Announces each row for screen readers.
+		LeankorApp.util.AccessibilityUtil.initGridKeyboardNavigation(me, {
+			announceRowFn: function (record, idx, total) {
+				var name = '';
+				if (record.isSurrogateResource && record.isSurrogateResource()) {
+					name = record.getName ? record.getName() : '';
+				} else if (record.getOriginalAssignment && record.getOriginalAssignment()) {
+					name = record.getOriginalAssignment().get('CustomTaskName') || '';
+				} else if (record.get) {
+					name = record.get('Name') || '';
+				}
+				return Ext.String.format(
+					(Locale.LocaleName && Locale.LocaleName.RowAnnouncement) || '{0}, row {1} of {2}',
+					Ext.htmlEncode(name), idx + 1, total
+				);
+			}
+		});
+		// Keyboard-resize the divider between the tree grid and the chart.
+		LeankorApp.util.AccessibilityUtil.wireSplitterKeyboard(me);
+
+		// Collapse the timeline to a single tab stop (RU/CP have no event bars).
+		var schedView = (typeof me.getSchedulingView === 'function') ? me.getSchedulingView() : null;
+		var schedDom = schedView && schedView.el && schedView.el.dom;
+		if (schedDom && Ext.isFunction(LeankorApp.util.AccessibilityUtil.neutralizeTimelineTabStops)) {
+			var neutralize = function () {
+				LeankorApp.util.AccessibilityUtil.neutralizeTimelineTabStops(schedDom);
+			};
+			Ext.defer(neutralize, 200);
+			var st = me.getStore && me.getStore();
+			if (st) {
+				st.on('refresh', neutralize);
+				st.on('datachanged', neutralize);
+			}
+			if (typeof schedView.on === 'function') { schedView.on('refresh', neutralize); }
+		}
+
+		// Tab routing: popOut → + icon → first NAME-COLUMN row → right panel.
+		Ext.defer(function () { me.wireAddBtnTabRouting(); }, 50);
 	},
+
+	/**
+	 * @private
+	 * Redirect Name-column-header focus onto the + icon, and wire keydown on the
+	 * + icon (Enter/Space activate; Tab routes into the locked grid's first row;
+	 * Shift+Tab back to popOut). Lets the user land focus on the NAME COLUMN.
+	 */
+	wireAddBtnTabRouting: function () {
+		var me = this;
+		if (btype !== 'ru') { return; }
+		var nameCol = me.getColumns()[0];
+		var nameColEl = nameCol && nameCol.el && nameCol.el.dom;
+		if (!nameColEl) { return; }
+		var addBtn = nameColEl.querySelector('.addBtnTop');
+		if (!addBtn || addBtn._tabRoutingBound) { return; }
+		addBtn._tabRoutingBound = true;
+
+		if (!nameColEl._addBtnFocusRedirected) {
+			nameColEl._addBtnFocusRedirected = true;
+			nameColEl.addEventListener('focus', function () {
+				if (document.activeElement === addBtn) { return; }
+				setTimeout(function () {
+					addBtn.focus();
+					nameCol.el.removeCls('x-column-header-focus');
+					nameCol.el.removeCls('x-focus');
+				}, 0);
+			}, true);
+		}
+
+		addBtn.addEventListener('keydown', function (evt) {
+			if (!evt) { return; }
+			if (evt.keyCode === 13 || evt.keyCode === 32) {
+				evt.preventDefault();
+				evt.stopPropagation();
+				addBtn.click();
+				return;
+			}
+			if (evt.keyCode !== 9) { return; }
+			if (evt.shiftKey) {
+				var popOut = Ext.ComponentQuery.query('[reference=popOut]')[0];
+				if (popOut && popOut.el) {
+					evt.preventDefault();
+					evt.stopPropagation();
+					popOut.focus();
+				}
+				return;
+			}
+			var view = me.getView();
+			var store = view && view.getStore();
+			var moved = false;
+			if (view && store && store.getCount()) {
+				moved = LeankorApp.util.AccessibilityUtil.focusFirstGridRow(me);
+			}
+			if (!moved) {
+				var partner = Ext.ComponentQuery.query('[xtype=resourceschedule]')[0];
+				if (partner && partner.isVisible && partner.isVisible(true)) {
+					if (typeof partner.focus === 'function') {
+						partner.focus();
+						moved = true;
+					} else if (partner.getView && partner.getView().el && partner.getView().el.dom) {
+						var partnerDom = partner.getView().el.dom;
+						if (!partnerDom.hasAttribute('tabindex')) {
+							partnerDom.setAttribute('tabindex', '0');
+						}
+						partnerDom.focus();
+						moved = (document.activeElement === partnerDom);
+					}
+				}
+			}
+			if (moved) {
+				evt.preventDefault();
+				evt.stopPropagation();
+			}
+		}, true);
+
+		var gview = me.getView();
+		if (gview && gview.el && gview.el.dom && !gview.el.dom._addBtnShiftTabBound) {
+			gview.el.dom._addBtnShiftTabBound = true;
+			gview.el.dom.setAttribute('tabindex', '-1');
+			gview.el.dom.addEventListener('keydown', function (evt) {
+				if (!evt || evt.keyCode !== 9 || !evt.shiftKey) { return; }
+				var active = document.activeElement;
+				if (!gview.el.dom.contains(active)) { return; }
+				var firstRow = gview.el.dom.querySelector('.x-grid-row, .x-grid-item');
+				if (active !== gview.el.dom && active !== firstRow && firstRow && !firstRow.contains(active)) {
+					return;
+				}
+				evt.preventDefault();
+				evt.stopPropagation();
+				addBtn.focus();
+			}, true);
+		}
+	},
+
 	columns: [{
 			xtype: 'treecolumn',
 			flex: 1,

@@ -150,13 +150,13 @@ Ext.define("LeankorApp.view.ResourceSchedule", {
 				}
 
 				if (schStartDate && schEndDate) {
-					tplData.style = 'background-color: #83B4DF ; color : white; border-radius: 1px;';
+					tplData.style = 'background-color: #2563EB ; color : white; border-radius: 1px;';
 				} else {
-					tplData.style = 'background-color: #83B4DF ; border: 2px solid #FFC200; color : white; border-radius: 1px;';
+					tplData.style = 'background-color: #2563EB ; border: 2px solid #FFC200; color : white; border-radius: 1px;';
 
 				} // 2px solid #FFC201;
 			} else {
-				tplData.style = 'background-color: #83B4DF ; color : white; border-radius: 1px;border-color: rgb(71, 151, 231) !important;';
+				tplData.style = 'background-color: #2563EB ; color : white; border-radius: 1px;border-color: rgb(71, 151, 231) !important;';
 			}
 			if (customName) {
 				eventRecord.set('ToolTip', customName + '' + projectName);
@@ -214,7 +214,7 @@ Ext.define("LeankorApp.view.ResourceSchedule", {
 											}
 										],
 										itemId: 'myChaterWindow',
-										html: ['<iframe title="' + Ext.htmlEncode((Locale.LocaleName && (Locale.LocaleName.FollowOnChatter || Locale.LocaleName.Discuss)) || 'Discussion') + ': ' + Ext.htmlEncode(eventRecord.data.Name || '') + '" height="100%" width=100% src="' + myURL + '"></iframe>']
+										html: ['<iframe height="100%" width=100% src="' + myURL + '"></iframe>']
 									});
 								oDialog.show();
 							}
@@ -261,7 +261,21 @@ Ext.define("LeankorApp.view.ResourceSchedule", {
 
 				});
 
-			SchMenu.showAt(e.getXY());
+			// Keyboard-triggered (Shift+F10 / ContextMenu / Enter on a focused
+			// event): anchor the menu to the event bar and move focus to the
+			// first item so it is keyboard-navigable. Mouse right-click keeps
+			// the pointer-position behaviour. Mirrors resource-management.
+			if (e && e.keyboardOpen && e.targetEl) {
+				SchMenu.showBy(Ext.get(e.targetEl), 'tl-bl');
+				Ext.defer(function () {
+					var first = SchMenu.down('menuitem');
+					if (first && typeof first.focus === 'function') {
+						first.focus();
+					}
+				}, 50);
+			} else {
+				SchMenu.showAt(e.getXY());
+			}
 		},
 		eventdragstart: function (view, dragContext, eOpts) {
 			Ext.getStore('assignmentStore').commitChanges();

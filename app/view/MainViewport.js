@@ -72,7 +72,9 @@ Ext.define('LeankorApp.view.MainViewport', {
 					};
 					constrainToVh();
 					// Re-constrain on resize/zoom changes
-					var resizeHandler = function () { constrainToVh(); };
+					var resizeHandler = function () {
+						constrainToVh();
+					};
 					window.addEventListener('resize', resizeHandler);
 					me.on('destroy', function () {
 						window.removeEventListener('resize', resizeHandler);
@@ -111,24 +113,24 @@ Ext.define('LeankorApp.view.MainViewport', {
 			this.initComponent();
 		}
 		if (portfolio.pageStrings) {
-            Locale.LocaleName = Object.assign(Locale.LocaleName, Locale.LocaleName, portfolio.pageStrings);
-        }
+			Locale.LocaleName = Object.assign(Locale.LocaleName, Locale.LocaleName, portfolio.pageStrings);
+		}
 		var weekendDays = me.getController().getWeekendDays(),
 		calendar = Ext.create('Gnt.data.calendar.BusinessTime', {
-				calendarId: 'calendarSevenDays',
-				defaultAvailability: me.getController().getCalendarAvailability(portfolio.WorkingHoursPerDay || 8),
-				hoursPerDay: portfolio.WorkingHoursPerDay || 8,
-				daysPerWeek: 7,
-				daysPerMonth: 30,
-				weekendFirstDay: weekendDays.first,
-				weekendSecondDay: weekendDays.second,
-				weekendsAreWorkdays: true
-			});
+			calendarId: 'calendarSevenDays',
+			defaultAvailability: me.getController().getCalendarAvailability(portfolio.WorkingHoursPerDay || 8),
+			hoursPerDay: portfolio.WorkingHoursPerDay || 8,
+			daysPerWeek: 7,
+			daysPerMonth: 30,
+			weekendFirstDay: weekendDays.first,
+			weekendSecondDay: weekendDays.second,
+			weekendsAreWorkdays: true
+		});
 		var taskStore = new LeankorApp.store.TaskStoreCustom({
-				calendar: calendar,
-				assignmentStore: 'assignmentStore',
-				resourceStore: 'resourcesStoreCustom'
-			}),
+			calendar: calendar,
+			assignmentStore: 'assignmentStore',
+			resourceStore: 'resourcesStoreCustom'
+		}),
 		// assignmentStore = Ext.getStore('assignmentStore'),
 		centerPanel = null,
 		mainPanel = null,
@@ -370,11 +372,11 @@ Ext.define('LeankorApp.view.MainViewport', {
 				eventStore: taskStore,
 				assignmentStore: 'assignmentStore',
 				resourceStore: 'resourcesStoreCustom',
-				split       : true,
-				collapsible : true,
-				layout      : 'fit',
+				split: true,
+				collapsible: true,
+				layout: 'fit',
 				header: {
-					hidden : true
+					hidden: true
 				}
 			};
 		} else {
@@ -382,8 +384,8 @@ Ext.define('LeankorApp.view.MainViewport', {
 				xtype: 'resourceschedule',
 				calendar: calendar,
 				highlightWeekends: true,
-				region               : 'center',
-				height               : '90%',
+				region: 'center',
+				height: '90%',
 				weekStartDay: portfolio.FirstDayOfTheWeek,
 				viewPreset: 'weekAndMonth',
 				// startDate: new Date((new Date().getFullYear()), (new Date().getMonth()), (new Date().getDate())),
@@ -403,26 +405,26 @@ Ext.define('LeankorApp.view.MainViewport', {
 				weekStartDay: portfolio.FirstDayOfTheWeek,
 				highlightWeekends: true,
 				calendar: calendar,
-				region               : 'south',
-				height               : '50%',
+				region: 'south',
+				height: '50%',
 				partnerTimelinePanel: partnerTimelinePanel,
 				taskStore: taskStore,
 				//viewPreset: 'weekAndMonth',
 				zoomLevels: zoomLevels,
-				split       : true,
-				collapsible : true,
-				layout      : 'fit',
+				split: true,
+				collapsible: true,
+				layout: 'fit',
 				header: {
-					hidden : true
+					hidden: true
 				}
 			};
 		}
 		PartnerPanel = (btype == 'ru' ? new LeankorApp.view.ResourceSchedule(subPanel) : new LeankorApp.view.AssignmentGrid(subPanel));
 		Ext.apply(this, {
 			items: [
-						partnerTimelinePanel, 
-						PartnerPanel
-					
+				partnerTimelinePanel,
+				PartnerPanel
+
 			]
 		});
 		me.callParent(arguments);

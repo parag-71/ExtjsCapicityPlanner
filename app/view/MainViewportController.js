@@ -120,6 +120,23 @@ Ext.define('LeankorApp.view.MainViewportController', {
         }
         }); //end of code
          */
+
+        // Zoom focus-jump fix: at >100% zoom a bare focus() makes the browser
+        // scroll the parent Lightning page to bring the element into view, so the
+        // board jumps when the "+" resource panel opens. Suppress that scroll only
+        // while the panel is open (LeankorApp.suppressFocusScroll is toggled by the
+        // panel) so normal keyboard focus still scrolls off-screen components in.
+        if (!HTMLElement.prototype.__leankorPreventScrollFocus) {
+            var nativeFocus = HTMLElement.prototype.focus;
+            HTMLElement.prototype.focus = function (options) {
+                if (LeankorApp.suppressFocusScroll && !(options && options.preventScroll !== undefined)) {
+                    options = Ext.apply({ preventScroll: true }, options);
+                }
+                nativeFocus.call(this, options);
+            };
+            HTMLElement.prototype.__leankorPreventScrollFocus = true;
+        }
+
         var promise = new Promise(function (resolve, reject) {
             portfolio = glueforce.getWorkspaceConfig();
             glueforceUtil.getUserLog(function (resultData) {
@@ -130,9 +147,9 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 }
 
                 var localformat = resultData.LocaleSidKey = localeSidKeyData.join('-'),
-                localformatOrder = glueforceUtil.getStaticLocalData(localformat),
-                formatOrder,
-                formatParts;
+                    localformatOrder = glueforceUtil.getStaticLocalData(localformat),
+                    formatOrder,
+                    formatParts;
                 if (localformatOrder) {
                     formatOrder = localformatOrder;
                 } else {
@@ -145,22 +162,22 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 portfolio.dateFormatOrder = [];
                 Ext.Array.each(formatOrder, function (format) {
                     switch (format.type || format) {
-                    case 'month':
-                    case 'm':
-                        portfolio.dateFormatOrder.push('m');
-                        portfolio.dateMonthFormatOrder.push('m');
-                        portfolio.monthYearFormatOrder.push('m');
-                        break;
-                    case 'day':
-                    case 'd':
-                        portfolio.dateFormatOrder.push('d');
-                        portfolio.dateMonthFormatOrder.push('d');
-                        break;
-                    case 'year':
-                    case 'y':
-                        portfolio.dateFormatOrder.push('y');
-                        portfolio.monthYearFormatOrder.push('y');
-                        break;
+                        case 'month':
+                        case 'm':
+                            portfolio.dateFormatOrder.push('m');
+                            portfolio.dateMonthFormatOrder.push('m');
+                            portfolio.monthYearFormatOrder.push('m');
+                            break;
+                        case 'day':
+                        case 'd':
+                            portfolio.dateFormatOrder.push('d');
+                            portfolio.dateMonthFormatOrder.push('d');
+                            break;
+                        case 'year':
+                        case 'y':
+                            portfolio.dateFormatOrder.push('y');
+                            portfolio.monthYearFormatOrder.push('y');
+                            break;
                     }
                 });
                 if (!portfolio.dateFormatOrder.length) {
@@ -173,10 +190,10 @@ Ext.define('LeankorApp.view.MainViewportController', {
         promise.then(successMessage => {
             //overrides default presets date formats-start
             var presetsWithdefFormats = Sch.preset.Manager.defaultPresets,
-            dateMonthFormatOrder = glueforceUtil.getDateFormat(portfolio.dateMonthFormatOrder[0] + ' ' + portfolio.dateMonthFormatOrder[1], true),
-            monthYearFormatOrder = glueforceUtil.getDateFormat(portfolio.monthYearFormatOrder[0] + ' ' + portfolio.monthYearFormatOrder[1], true),
-            dateMonthYearFormatOrder = glueforceUtil.getDateFormat(portfolio.dateFormatOrder[0] + ' ' + portfolio.dateFormatOrder[1] + ' ' + portfolio.dateFormatOrder[2], true),
-            dateMonthYearFormatOrderSecond = glueforceUtil.getDateFormat(portfolio.dateFormatOrder[0] + '-' + portfolio.dateFormatOrder[1] + '-' + portfolio.dateFormatOrder[2]);
+                dateMonthFormatOrder = glueforceUtil.getDateFormat(portfolio.dateMonthFormatOrder[0] + ' ' + portfolio.dateMonthFormatOrder[1], true),
+                monthYearFormatOrder = glueforceUtil.getDateFormat(portfolio.monthYearFormatOrder[0] + ' ' + portfolio.monthYearFormatOrder[1], true),
+                dateMonthYearFormatOrder = glueforceUtil.getDateFormat(portfolio.dateFormatOrder[0] + ' ' + portfolio.dateFormatOrder[1] + ' ' + portfolio.dateFormatOrder[2], true),
+                dateMonthYearFormatOrderSecond = glueforceUtil.getDateFormat(portfolio.dateFormatOrder[0] + '-' + portfolio.dateFormatOrder[1] + '-' + portfolio.dateFormatOrder[2]);
 
             presetsWithdefFormats.day.headerConfig.middle.dateFormat = "D " + glueforceUtil.getDateFormat(portfolio.dateMonthFormatOrder[0] + '/' + portfolio.dateMonthFormatOrder[1]);
             presetsWithdefFormats.dayAndWeek.displayDateFormat = glueforceUtil.getDateFormat(portfolio.dateFormatOrder[0] + '-' + portfolio.dateFormatOrder[1] + '-' + portfolio.dateFormatOrder[2]) + " G:i";
@@ -202,12 +219,12 @@ Ext.define('LeankorApp.view.MainViewportController', {
             Ext.override(Gnt.model.utilization.DefaultUtilizationNegotiationStrategy, {
                 addNewSurrogateAssignments: function (utilizationResourceStore, utilizationEventStore, assignmentStore) {
                     var me = this,
-                    resourceNode = null,
-                    eventsToAdd = [];
+                        resourceNode = null,
+                        eventsToAdd = [];
                     Ext.Array.forEach(assignmentStore.getRange(), function (assignment) {
                         var surrogateResource,
-                        originalResource,
-                        originalTask;
+                            originalResource,
+                            originalTask;
                         if (!utilizationResourceStore.getModelByOriginal(assignment)) {
                             originalResource = assignment.getResource();
                             originalTask = assignment.getTask();
@@ -555,29 +572,29 @@ Ext.define('LeankorApp.view.MainViewportController', {
 
                     if (!me.template) {
                         me.template = new Ext.XTemplate([
-                                    '<div class="' + Ext.baseCSSPrefix + 'fa sch-tip-{[values.valid ? "ok fa-check" : "notok fa-ban"]} ">' +
-                                    '{[this.renderClock(values.startDate, values.startText, "sch-tooltip-startdate")]}' +
-                                    '{[this.renderClock(values.endDate, values.endText, "sch-tooltip-enddate")]}' +
-                                    '<div class="sch-tip-message">{message}</div>' +
-                                    '</div>', {
-                                        renderClock: function (date, text, cls) {
-                                            var dateFormat = glueforceUtil.getDateFormat(portfolio.dateFormatOrder[0] + '/' + portfolio.dateFormatOrder[1] + '/' + portfolio.dateFormatOrder[2]),
-                                            text = Ext.Date.format(new Date(text), dateFormat);
-                                            return me.clockTpl.apply({
-                                                date: date,
-                                                text: text,
-                                                cls: cls
-                                            });
-                                        }
-                                    }
-                                ]);
+                            '<div class="' + Ext.baseCSSPrefix + 'fa sch-tip-{[values.valid ? "ok fa-check" : "notok fa-ban"]} ">' +
+                            '{[this.renderClock(values.startDate, values.startText, "sch-tooltip-startdate")]}' +
+                            '{[this.renderClock(values.endDate, values.endText, "sch-tooltip-enddate")]}' +
+                            '<div class="sch-tip-message">{message}</div>' +
+                            '</div>', {
+                                renderClock: function (date, text, cls) {
+                                    var dateFormat = glueforceUtil.getDateFormat(portfolio.dateFormatOrder[0] + '/' + portfolio.dateFormatOrder[1] + '/' + portfolio.dateFormatOrder[2]),
+                                        text = Ext.Date.format(new Date(text), dateFormat);
+                                    return me.clockTpl.apply({
+                                        date: date,
+                                        text: text,
+                                        cls: cls
+                                    });
+                                }
+                            }
+                        ]);
                     }
 
                     me.callParent(arguments);
                 }
             });
             this.initializeGlueforce();
-        }, function (errorMessage) {})
+        }, function (errorMessage) { })
     },
 
     /**
@@ -623,9 +640,9 @@ Ext.define('LeankorApp.view.MainViewportController', {
 
             } else if (urlData.filteredData) { //If true ,then board is opened from an existing RM which has some filtered applied and we have to show filter this RM with same data
                 var isprojectfilter = false,
-                //UserIDs = [],
-                ProjectIds = [],
-                resourceTypeIds = [];
+                    //UserIDs = [],
+                    ProjectIds = [],
+                    resourceTypeIds = [];
                 urlData.roles = urlData.roles && JSON.parse(urlData.roles);
                 urlData.projects = urlData.projects && JSON.parse(urlData.projects);
                 urlData.resources = urlData.resources && JSON.parse(urlData.resources);
@@ -684,8 +701,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
      */
     createGantt: function () {
         var dateMonthFormatOrder = glueforceUtil.getDateFormat(portfolio.dateMonthFormatOrder[0] + ' ' + portfolio.dateMonthFormatOrder[1], true),
-        monthYearFormatOrder = glueforceUtil.getDateFormat(portfolio.monthYearFormatOrder[0] + ' ' + portfolio.monthYearFormatOrder[1], true),
-        dateMonthYearFormatOrder = glueforceUtil.getDateFormat(portfolio.dateFormatOrder[0] + ' ' + portfolio.dateFormatOrder[1] + ' ' + portfolio.dateFormatOrder[2], true);
+            monthYearFormatOrder = glueforceUtil.getDateFormat(portfolio.monthYearFormatOrder[0] + ' ' + portfolio.monthYearFormatOrder[1], true),
+            dateMonthYearFormatOrder = glueforceUtil.getDateFormat(portfolio.dateFormatOrder[0] + ' ' + portfolio.dateFormatOrder[1] + ' ' + portfolio.dateFormatOrder[2], true);
 
         //view resolution setting for current week (default setting)
         Sch.preset.Manager.registerPreset("weekAndDayNarrow", {
@@ -938,17 +955,17 @@ Ext.define('LeankorApp.view.MainViewportController', {
         }
 
         var janMonth = Ext.htmlEncode(Locale.LocaleName.JanuaryLbl),
-        FebMonth = Ext.htmlEncode(Locale.LocaleName.FebruaryLbl),
-        marchMonth = Ext.htmlEncode(Locale.LocaleName.MarchLbl),
-        aprilMonth = Ext.htmlEncode(Locale.LocaleName.AprilLbl),
-        mayMonth = Ext.htmlEncode(Locale.LocaleName.MayShort),
-        juneMonth = Ext.htmlEncode(Locale.LocaleName.JuneLbl),
-        julyMonth = Ext.htmlEncode(Locale.LocaleName.JulyLbl),
-        augMonth = Ext.htmlEncode(Locale.LocaleName.AugustLbl),
-        sepMonth = Ext.htmlEncode(Locale.LocaleName.SeptemberLbl),
-        octMonth = Ext.htmlEncode(Locale.LocaleName.OctoberLbl),
-        novMonth = Ext.htmlEncode(Locale.LocaleName.NovemberLbl),
-        decMonth = Ext.htmlEncode(Locale.LocaleName.DecemberLbl);
+            FebMonth = Ext.htmlEncode(Locale.LocaleName.FebruaryLbl),
+            marchMonth = Ext.htmlEncode(Locale.LocaleName.MarchLbl),
+            aprilMonth = Ext.htmlEncode(Locale.LocaleName.AprilLbl),
+            mayMonth = Ext.htmlEncode(Locale.LocaleName.MayShort),
+            juneMonth = Ext.htmlEncode(Locale.LocaleName.JuneLbl),
+            julyMonth = Ext.htmlEncode(Locale.LocaleName.JulyLbl),
+            augMonth = Ext.htmlEncode(Locale.LocaleName.AugustLbl),
+            sepMonth = Ext.htmlEncode(Locale.LocaleName.SeptemberLbl),
+            octMonth = Ext.htmlEncode(Locale.LocaleName.OctoberLbl),
+            novMonth = Ext.htmlEncode(Locale.LocaleName.NovemberLbl),
+            decMonth = Ext.htmlEncode(Locale.LocaleName.DecemberLbl);
 
         Ext.Date.monthNames = [janMonth, FebMonth, marchMonth, aprilMonth, mayMonth, juneMonth, julyMonth, augMonth, sepMonth, octMonth, novMonth, decMonth];
         Ext.Date.monthNamesInEnglish = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -970,10 +987,10 @@ Ext.define('LeankorApp.view.MainViewportController', {
         Ext.Date.getMonthNumber = function (name) {
             return Ext.Date.monthNumbers[name];
         },
-        Ext.override(Ext.picker.Month, {
-            okText: Ext.htmlEncode(Locale.LocaleName.OK),
-            cancelText: Ext.htmlEncode(Locale.LocaleName.Cancel)
-        });
+            Ext.override(Ext.picker.Month, {
+                okText: Ext.htmlEncode(Locale.LocaleName.OK),
+                cancelText: Ext.htmlEncode(Locale.LocaleName.Cancel)
+            });
         Ext.Date.dayNames = [
             Ext.htmlEncode(Locale.LocaleName.Sunday),
             Ext.htmlEncode(Locale.LocaleName.Monday),
@@ -1002,11 +1019,11 @@ Ext.define('LeankorApp.view.MainViewportController', {
         });
 
         var taskStore = Ext.getStore('taskStoreCustom'),
-        assignmentStore = Ext.getStore('assignmentStore');
+            assignmentStore = Ext.getStore('assignmentStore');
         var cm = Ext.create('Gnt.data.CrudManager', {
             taskStore: taskStore
         }),
-        gantt = btype == 'ru' ? Ext.ComponentQuery.query('[xtype=assignmentgridpanel]')[0] : Ext.ComponentQuery.query('[xtype=resourceschedule]')[0];
+            gantt = btype == 'ru' ? Ext.ComponentQuery.query('[xtype=assignmentgridpanel]')[0] : Ext.ComponentQuery.query('[xtype=resourceschedule]')[0];
         if (btype != 'ru') {
             gantt.eventStore = gantt.taskStore = taskStore;
             gantt.resourceStore = taskStore.resourceStore;
@@ -1058,17 +1075,17 @@ Ext.define('LeankorApp.view.MainViewportController', {
      */
     onNewWindow: function () {
         var fid = Ext.urlDecode(Ext.htmlDecode(window.location.search.substring(1))).fid,
-        url = portfolio.BaseURL;
+            url = portfolio.BaseURL;
         var myURL,
-        me = this,
-        isVisible = false,
-        partnerView = btype != 'ru' ? Ext.ComponentQuery.query('[xtype=assignmentgridpanel]')[0] : Ext.ComponentQuery.query('[xtype=resourceschedule]')[0];
+            me = this,
+            isVisible = false,
+            partnerView = btype != 'ru' ? Ext.ComponentQuery.query('[xtype=assignmentgridpanel]')[0] : Ext.ComponentQuery.query('[xtype=resourceschedule]')[0];
         if (partnerView && !partnerView.hidden) { // If already opened
             isVisible = true;
         }
 
         myURL = url + portfolio.capacityPlanningURL.replace('/', '') + '?btype=ru';
-        if (typeof(LeankorApp.Gantt.objFilter) != 'undefined') {
+        if (typeof (LeankorApp.Gantt.objFilter) != 'undefined') {
             myURL = myURL + '&filteredData=true' + '&preset=' + LeankorApp.Gantt.gantt.getViewPreset() + '&start=' + LeankorApp.Gantt.gantt.getStartDate().toISOString() + '&end=' + LeankorApp.Gantt.gantt.getEndDate().toISOString() + '&bottomVisible=' + isVisible;
             if (LeankorApp.Gantt.objFilter.ProjectIds.length) {
                 myURL = myURL + '&projects=' + JSON.stringify(LeankorApp.Gantt.objFilter.ProjectIds);
@@ -1097,7 +1114,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
     onResoulutionChange: function (combo, records, eOpts) {
         _LOG && console.log('on resolution change');
         var radio = document.getElementsByClassName(records.data.value),
-        me = this;
+            me = this;
         radio[0].checked = true;
         var start = LeankorApp.Gantt.gantt.taskStore.getTotalTimeSpan().start ? LeankorApp.Gantt.gantt.taskStore.getTotalTimeSpan().start : LeankorApp.Gantt.gantt.getStart();
         LeankorApp.Gantt.gantt.switchViewPreset(combo.getValue(), start);
@@ -1127,7 +1144,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
     onViewChange: function (combo, records, eOpts) {
         _LOG && console.log('on view change');
         var partnerView = null,
-        assignmentPanel = Ext.ComponentQuery.query('[xtype=assignmentgridpanel]')[0];
+            assignmentPanel = Ext.ComponentQuery.query('[xtype=assignmentgridpanel]')[0];
         if (btype != 'ru') {
             partnerView = assignmentPanel;
             if (partnerView && !partnerView.hidden) { // If already opened
@@ -1164,18 +1181,18 @@ Ext.define('LeankorApp.view.MainViewportController', {
         store.removeAll();
         if (btype != 'ru') {
             store.proxy.data = [{
-                    "name": Ext.htmlEncode(Locale.LocaleName.CapacityPlanning),
-                    "value": fld.config.resourceUtilization == true ? 'checked' : 'unchecked',
-                    "id": 'resourceutilization'
-                }
+                "name": Ext.htmlEncode(Locale.LocaleName.CapacityPlanning),
+                "value": fld.config.resourceUtilization == true ? 'checked' : 'unchecked',
+                "id": 'resourceutilization'
+            }
             ];
             // taskStore.load();
         } else {
             store.proxy.data = [{
-                    "name": Ext.htmlEncode(Locale.LocaleName.ResourceSchedule),
-                    "value": fld.config.resourceUtilization == true ? 'checked' : 'unchecked',
-                    "id": 'resourceschedule'
-                }
+                "name": Ext.htmlEncode(Locale.LocaleName.ResourceSchedule),
+                "value": fld.config.resourceUtilization == true ? 'checked' : 'unchecked',
+                "id": 'resourceschedule'
+            }
             ];
         }
         store.load();
@@ -1218,41 +1235,52 @@ Ext.define('LeankorApp.view.MainViewportController', {
     onSettingCheck: function (combo, records, eOpts) {
         _LOG && console.log('on setting change');
         var ganttPanel = LeankorApp.Gantt.gantt,
-        meMain = this,
-        value = combo.getValue();
+            meMain = this,
+            value = combo.getValue();
         switch (value) {
-        case "Zoom to Fit":
-            ganttPanel.zoomToFit(); //call ZoomToFit  method to bring all events on a visible view
-            var me = this;
-            typeof me.objFilter != 'undefined' && me.getAllResources(me.objFilter);
-            combo.reset();
-            break;
-        case "Print": // Call print function and also set default options for print dialogue box
-            ganttPanel.getPlugin('printPlugin').exportDialogConfig.dateRangeFormat = glueforceUtil.getDateFormat(portfolio.dateFormatOrder[0] + '/' + portfolio.dateFormatOrder[1] + '/' + portfolio.dateFormatOrder[2]);
-            ganttPanel.getPlugin('printPlugin').exportDialogConfig.title = Locale.LocaleName.PrintSetting;
-            ganttPanel.print();
-            var pluginPrint = ganttPanel.getPlugin('printPlugin'),
-            activeDialogue = pluginPrint.getActiveExportDialog();
-            activeDialogue.down('#export').setText(Locale.LocaleName.Print);
-            activeDialogue.down('#export').setTooltip(Locale.LocaleName.Print);
-            activeDialogue.down('#cancel').setText(Locale.LocaleName.Cancel);
-            activeDialogue.down('#cancel').setTooltip(Locale.LocaleName.Cancel);
-            activeDialogue.tools['close'].setTooltip(Locale.LocaleName.CloseDialog);
-            LeankorApp.util.AccessibilityUtil.initCloseToolAccessibility(activeDialogue);
-            Ext.defer(function () {
-                var first = activeDialogue.form && activeDialogue.form.items &&
-                    activeDialogue.form.items.items && activeDialogue.form.items.items[0];
-                if (first && typeof first.focus === 'function') {
-                    first.focus();
-                }
-            }, 50);
-            Ext.Array.forEach(activeDialogue.form.items.items, function (item, index) {
-                var field = item.name;
-                switch (field) {
-                case "range":
+            case "Zoom to Fit":
+                ganttPanel.zoomToFit(); //call ZoomToFit  method to bring all events on a visible view
+                var me = this;
+                typeof me.objFilter != 'undefined' && me.getAllResources(me.objFilter);
+                combo.reset();
+                break;
+            case "Print": // Call print function and also set default options for print dialogue box
+                ganttPanel.getPlugin('printPlugin').exportDialogConfig.dateRangeFormat = glueforceUtil.getDateFormat(portfolio.dateFormatOrder[0] + '/' + portfolio.dateFormatOrder[1] + '/' + portfolio.dateFormatOrder[2]);
+                ganttPanel.getPlugin('printPlugin').exportDialogConfig.title = Locale.LocaleName.PrintSetting;
+                ganttPanel.print();
+                var pluginPrint = ganttPanel.getPlugin('printPlugin'),
+                    activeDialogue = pluginPrint.getActiveExportDialog();
+                activeDialogue.down('#export').setText(Locale.LocaleName.Print);
+                activeDialogue.down('#export').setTooltip(Locale.LocaleName.Print);
+                activeDialogue.down('#cancel').setText(Locale.LocaleName.Cancel);
+                activeDialogue.down('#cancel').setTooltip(Locale.LocaleName.Cancel);
+                activeDialogue.tools['close'].setTooltip(Locale.LocaleName.CloseDialog);
+                LeankorApp.util.AccessibilityUtil.initCloseToolAccessibility(activeDialogue);
+                Ext.defer(function () {
+                    var first = activeDialogue.form && activeDialogue.form.items &&
+                        activeDialogue.form.items.items && activeDialogue.form.items.items[0];
+                    if (first && typeof first.focus === 'function') {
+                        first.focus();
+                    }
+                }, 50);
+                Ext.Array.forEach(activeDialogue.form.items.items, function (item, index) {
+                    var field = item.name;
+                    // a11y: tag combo picker so SCSS can draw a keyboard-focus border
+                    // on the currently navigated item. Picker is created lazily, so
+                    // attach on first expand. Skips non-combo fields (DPI, showHeader).
+                    if (item.getPicker) {
+                        item.on('expand', function (cmp) {
+                            var picker = cmp.getPicker();
+                            if (picker && !picker.hasCls('lk-print-combo-list')) {
+                                picker.addCls('lk-print-combo-list');
+                            }
+                        }, item, { single: true });
+                    }
+                    switch (field) {
+                        case "range":
 
-                    item.setFieldLabel(Locale.LocaleName.ScheduleRange);
-                    item.store.setData([{
+                            item.setFieldLabel(Locale.LocaleName.ScheduleRange);
+                            item.store.setData([{
                                 "name": Locale.LocaleName.CompleteSchedule,
                                 "value": "complete"
                             }, {
@@ -1265,26 +1293,26 @@ Ext.define('LeankorApp.view.MainViewportController', {
                                 "name": Locale.LocaleName.VisibleSchedule,
                                 "value": "current"
                             }
-                        ]);
-                    item.setValue('complete');
-                    break;
-                case "rowsRange":
+                            ]);
+                            item.setValue('complete');
+                            break;
+                        case "rowsRange":
 
-                    item.setFieldLabel(Locale.LocaleName.RowsRange);
-                    item.store.setData([{
+                            item.setFieldLabel(Locale.LocaleName.RowsRange);
+                            item.store.setData([{
                                 "name": Locale.LocaleName.AllRows,
                                 "value": "all"
                             }, {
                                 "name": Locale.LocaleName.VisibleRows,
                                 "value": "visible"
                             }
-                        ]);
-                    item.setValue('all');
-                    break;
-                case "id":
+                            ]);
+                            item.setValue('all');
+                            break;
+                        case "id":
 
-                    item.setFieldLabel(Locale.LocaleName.ControlPagination);
-                    item.store.setData([{
+                            item.setFieldLabel(Locale.LocaleName.ControlPagination);
+                            item.store.setData([{
                                 "name": Locale.LocaleName.SinglePage,
                                 "value": "singlepage"
                             }, {
@@ -1294,84 +1322,103 @@ Ext.define('LeankorApp.view.MainViewportController', {
                                 "name": Locale.LocaleName.MultiplePagesVertically,
                                 "value": "multipagevertical"
                             }
-                        ]);
-                    item.setValue('multipage');
-                    break;
-                case "format":
-                    formatStore = Ext.create('Ext.data.Store', {
-                        fields: ['name', 'field1'],
-                        storeId: 'formatStore',
-                        data: [{
-                                "name": Locale.LocaleName.A5,
-                                "field1": "A5"
-                            }, {
-                                "name": Locale.LocaleName.A4,
-                                "field1": "A4"
-                            }, {
-                                "name": Locale.LocaleName.Letter,
-                                "field1": "Letter"
-                            }, {
-                                "name": Locale.LocaleName.Legal,
-                                "field1": "Legal"
-                            }, {
-                                "name": Locale.LocaleName.A3,
-                                "field1": "A3"
-                            }
-                        ]
-                    }),
-                    item.setFieldLabel(Locale.LocaleName.PaperFormat);
-                    item.setStore('formatStore');
-                    item.setConfig('displayField', 'name');
-                    item.setValue('Letter');
-                    break;
-                case "orientation":
+                            ]);
+                            item.setValue('multipage');
+                            break;
+                        case "format":
+                            formatStore = Ext.create('Ext.data.Store', {
+                                fields: ['name', 'field1'],
+                                storeId: 'formatStore',
+                                data: [{
+                                    "name": Locale.LocaleName.A5,
+                                    "field1": "A5"
+                                }, {
+                                    "name": Locale.LocaleName.A4,
+                                    "field1": "A4"
+                                }, {
+                                    "name": Locale.LocaleName.Letter,
+                                    "field1": "Letter"
+                                }, {
+                                    "name": Locale.LocaleName.Legal,
+                                    "field1": "Legal"
+                                }, {
+                                    "name": Locale.LocaleName.A3,
+                                    "field1": "A3"
+                                }
+                                ]
+                            }),
+                                item.setFieldLabel(Locale.LocaleName.PaperFormat);
+                            item.setStore('formatStore');
+                            item.setConfig('displayField', 'name');
+                            item.setValue('Letter');
+                            break;
+                        case "orientation":
 
-                    item.setFieldLabel(Locale.LocaleName.Orientation);
-                    item.store.setData([{
+                            item.setFieldLabel(Locale.LocaleName.Orientation);
+                            item.store.setData([{
                                 "name": Locale.LocaleName.Portrait,
                                 "value": "portrait"
                             }, {
                                 "name": Locale.LocaleName.Landscape,
                                 "value": "landscape"
                             }
-                        ]);
-                    item.setValue('landscape');
-                    break;
-                case "DPI":
-                    item.setValue(200);
-                    item.setFieldLabel(Locale.LocaleName.DPI);
-                    break;
-                case "showHeader":
-                    item.setValue(true);
-                    item.setFieldLabel(Locale.LocaleName.ShowHeader);
-                    break;
-                default:
-                    break;
+                            ]);
+                            item.setValue('landscape');
+                            break;
+                        case "DPI":
+                            item.setValue(200);
+                            item.setFieldLabel(Locale.LocaleName.DPI);
+                            break;
+                        case "showHeader":
+                            item.setValue(true);
+                            item.setFieldLabel(Locale.LocaleName.ShowHeader);
+                            break;
+                        default:
+                            break;
+                    }
+                });
+                var btn = activeDialogue.query('button'),
+                    i = 0,
+                    printbutton,
+                    btnToolbar;
+                for (i; i < btn.length; i++) {
+                    printbutton = btn[i];
+                    printbutton.getItemId() == 'export' ? printbutton.addCls('saveBtnClss') : printbutton.addCls('cancelBtnClss');
+                    // The footer button bar is an ExtJS FocusableContainer: it keeps a
+                    // roving tabindex (only one button is tabbable, Left/Right arrows
+                    // move between them), so Tab reached Save but skipped Cancel. Opt
+                    // the toolbar out of that roving behaviour and give every button
+                    // tabindex 0 so Tab visits them in the same sequence (Save -> Cancel).
+                    btnToolbar = printbutton.ownerCt;
+                    if (btnToolbar && btnToolbar.focusableContainer) {
+                        btnToolbar.focusableContainer = false;
+                        if (Ext.isFunction(btnToolbar.activateFocusableContainer)) {
+                            btnToolbar.activateFocusableContainer(false);
+                        }
+                    }
+                    printbutton.focusable = true;
+                    if (Ext.isFunction(printbutton.setTabIndex)) {
+                        printbutton.setTabIndex(0);
+                    } else if (printbutton.el && printbutton.el.dom) {
+                        printbutton.el.dom.setAttribute('tabindex', '0');
+                    }
                 }
-            });
-            var btn = activeDialogue.query('button'),
-            i = 0,
-            printbutton;
-            for (i; i < btn.length; i++) {
-                printbutton = btn[i];
-                printbutton.getItemId() == 'export' ? printbutton.addCls('saveBtnClss') : printbutton.addCls('cancelBtnClss');
-            }
-            combo.reset();
-            break;
-        case "Today":
-            ganttPanel.scrollToDate(Ext.Date.add(new Date(), Ext.Date.DAY, -4), true); // Scroll view to current date
-            var me = this;
-            typeof me.objFilter != 'undefined' && me.getAllResources(me.objFilter);
-            combo.reset();
-            break;
+                combo.reset();
+                break;
+            case "Today":
+                ganttPanel.scrollToDate(Ext.Date.add(new Date(), Ext.Date.DAY, -4), true); // Scroll view to current date
+                var me = this;
+                typeof me.objFilter != 'undefined' && me.getAllResources(me.objFilter);
+                combo.reset();
+                break;
 
-        default:
-            break;
+            default:
+                break;
         }
     },
     toggleProjectFilterFolder: function (popup, record) {
         var me = this,
-        port;
+            port;
 
         if (record.isExpanded && record.isExpanded()) {
             record.collapse();
@@ -1402,8 +1449,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
     },
     applyRoleHierarchyFilter: function (record, popup) {
         var meMain = this,
-        idList = [],
-        subordinateRoles;
+            idList = [],
+            subordinateRoles;
 
         if (!record) {
             return;
@@ -1433,10 +1480,10 @@ Ext.define('LeankorApp.view.MainViewportController', {
     getPartnerPanel: function () {
 
         var gantt = LeankorApp.Gantt.gantt,
-        taskStore = Ext.getStore('taskStoreCustom'),
-        assignmentStore = Ext.getStore('assignmentStore'),
-        partnerPanel = (btype == 'ru' ? Ext.ComponentQuery.query('[xtype=assignmentgridpanel]')[0] : Ext.ComponentQuery.query('[xtype=resourceschedule]')[0]),
-        configForRS = configForRU = null;
+            taskStore = Ext.getStore('taskStoreCustom'),
+            assignmentStore = Ext.getStore('assignmentStore'),
+            partnerPanel = (btype == 'ru' ? Ext.ComponentQuery.query('[xtype=assignmentgridpanel]')[0] : Ext.ComponentQuery.query('[xtype=resourceschedule]')[0]),
+            configForRS = configForRU = null;
         if (btype == 'ru') {
             configForRS = {
                 resourceStore: taskStore.resourceStore,
@@ -1478,7 +1525,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
     onProjectFilter: function (combo, records, eOpts) {
         // var me = this,
         var storeTree = Ext.getStore('folderProjectTree'),
-        me = this;
+            me = this;
         storeTree.removeAll();
 
         var popup = Ext.create('Ext.tree.Panel', {
@@ -1502,55 +1549,55 @@ Ext.define('LeankorApp.view.MainViewportController', {
             draggable: true,
             constrain: true,
             dockedItems: [{
-                    xtype: 'toolbar',
-                    flex: 1,
-                    dock: 'bottom',
-                    ui: 'footer',
-                    layout: {
-                        pack: 'end',
-                        type: 'hbox'
-                    },
-                    items: [{
-                            xtype: 'button',
-                            text: Ext.htmlEncode(Locale.LocaleName.Reset),
-                            tooltip: Ext.htmlEncode(Locale.LocaleName.Reset),
-                            cls: 'deleteCardBtn',
-                            handler: function () {
-                                var selectionModel = popup.getSelectionModel();
-                                if (selectionModel) {
-                                    selectionModel.deselectAll();
-                                }
-                            }
-                        }, {
-                            xtype: 'button',
-                            text: Ext.htmlEncode(Locale.LocaleName.Filter),
-                            tooltip: Ext.htmlEncode(Locale.LocaleName.Filter),
-                            itemId: 'projectFilterButton',
-                            cls: 'editPopUpSaveBtn',
-                            handler: function () {
-                                var idList = [],
-                                mee = this,
-                                cmp = this.up('panel').getSelectionModel();
-                                cmp.selected.each(function (task) {
-                                    if (idList.indexOf(task.data.Id) === -1 && task.isLeaf()) {
-                                        idList.push(task.data.Id);
-                                    }
-                                });
-                                if (idList.length) {
-                                    var obj = {
-                                        resourceTypeIds: [],
-                                        ProjectIds: idList,
-                                        UserIDs: [],
-                                        isprojectfilter: true
-                                    };
-                                    me.getAllResources(obj);
-
-                                }
-                                popup.close();
-                            }
+                xtype: 'toolbar',
+                flex: 1,
+                dock: 'bottom',
+                ui: 'footer',
+                layout: {
+                    pack: 'end',
+                    type: 'hbox'
+                },
+                items: [{
+                    xtype: 'button',
+                    text: Ext.htmlEncode(Locale.LocaleName.Reset),
+                    tooltip: Ext.htmlEncode(Locale.LocaleName.Reset),
+                    cls: 'deleteCardBtn',
+                    handler: function () {
+                        var selectionModel = popup.getSelectionModel();
+                        if (selectionModel) {
+                            selectionModel.deselectAll();
                         }
-                    ]
+                    }
+                }, {
+                    xtype: 'button',
+                    text: Ext.htmlEncode(Locale.LocaleName.Filter),
+                    tooltip: Ext.htmlEncode(Locale.LocaleName.Filter),
+                    itemId: 'projectFilterButton',
+                    cls: 'editPopUpSaveBtn',
+                    handler: function () {
+                        var idList = [],
+                            mee = this,
+                            cmp = this.up('panel').getSelectionModel();
+                        cmp.selected.each(function (task) {
+                            if (idList.indexOf(task.data.Id) === -1 && task.isLeaf()) {
+                                idList.push(task.data.Id);
+                            }
+                        });
+                        if (idList.length) {
+                            var obj = {
+                                resourceTypeIds: [],
+                                ProjectIds: idList,
+                                UserIDs: [],
+                                isprojectfilter: true
+                            };
+                            me.getAllResources(obj);
+
+                        }
+                        popup.close();
+                    }
                 }
+                ]
+            }
             ],
             listeners: {
                 beforecellclick: function (table, td, cellIndex, record, tr, rowIndex, e, eOpts) {
@@ -1599,35 +1646,9 @@ Ext.define('LeankorApp.view.MainViewportController', {
         LeankorApp.util.AccessibilityUtil.decoratePopup(popup);
         LeankorApp.util.AccessibilityUtil.wireTreePopupAria(popup);
         popup.showBy(combo, 'tc-bc?');
-        LeankorApp.util.AccessibilityUtil.initPopupKeyboardNav(popup, combo, {
-            tabNavigatesRows: true
-        });
+        LeankorApp.util.AccessibilityUtil.initPopupKeyboardNav(popup, combo);
         LeankorApp.util.AccessibilityUtil.wireTreeKeyboardNav(popup, {
             enterTogglesFolder: true,
-            onActivate: function (rec) {
-                if (!rec || !Ext.isFunction(rec.isLeaf) || !rec.isLeaf()) {
-                    return;
-                }
-                var sm = popup.getSelectionModel && popup.getSelectionModel(),
-                saveBtn = popup.down && popup.down('#projectFilterButton');
-                if (sm) {
-                    if (Ext.isFunction(sm.isSelected) && !sm.isSelected(rec)) {
-                        sm.select(rec, true);
-                    } else if (!Ext.isFunction(sm.isSelected)) {
-                        sm.select(rec, true);
-                    }
-                }
-                Ext.defer(function () {
-                    if (!saveBtn || saveBtn.destroyed || saveBtn.isDestroyed) {
-                        return;
-                    }
-                    if (Ext.isFunction(saveBtn.focus)) {
-                        saveBtn.focus();
-                    } else if (saveBtn.el && saveBtn.el.dom && Ext.isFunction(saveBtn.el.dom.focus)) {
-                        saveBtn.el.dom.focus();
-                    }
-                }, 60);
-            },
             beforeExpand: function (rec, doExpand) {
                 if (!rec.data.isTapped) {
                     rec.data.isTapped = true;
@@ -1675,18 +1696,138 @@ Ext.define('LeankorApp.view.MainViewportController', {
      *@param eOpts Method List for this combobox
      *@Description method is used to perform any action according to option selected from setting combobox
      */
-    onDepartmentFilter: function (combo, records, eOpts) {
-        _LOG && console.log('onDepartmentFilter');
-        var ganttPanel = LeankorApp.Gantt.gantt,
+  onDepartmentFilter: function (combo, records, eOpts) {
+    _LOG && console.log('onDepartmentFilter');
+
+    var ganttPanel = LeankorApp.Gantt.gantt,
         meMain = this,
         value = combo.getValue();
-        switch (value) {
+
+    switch (value) {
         case "By Resource Types":
             resourceAssignment.count = 0;
             resourceAssignment.offset = 0;
             Ext.getStore('pagingStoreOwner').removeAll();
+
             var idList = [],
-            recordList = [];
+                recordList = [],
+                isClosingDepartmentPopup = false,
+
+                clearDepartmentPopup = function (popupCmp) {
+                    popupCmp = popupCmp || this;
+
+                    if (isClosingDepartmentPopup) {
+                        return;
+                    }
+
+                    isClosingDepartmentPopup = true;
+
+                    if (meMain.popup === popupCmp) {
+                        meMain.popup = null;
+                    }
+
+                    if (combo && !combo.destroyed) {
+                        combo.reset();
+                    }
+                },
+
+                makeCloseToolFocusable = function (popup) {
+    Ext.defer(function () {
+        var closeToolCmp,
+            closeToolEl,
+            closeToolImg;
+
+        if (!popup || popup.destroyed || !popup.el) {
+            return;
+        }
+
+        closeToolCmp = popup.down('tool[type=close]');
+        closeToolEl = closeToolCmp && closeToolCmp.el;
+        closeToolImg = closeToolEl && closeToolEl.down('.x-tool-img');
+
+        if (closeToolEl && closeToolEl.dom) {
+            closeToolEl.dom.setAttribute('tabindex', '0');
+            closeToolEl.dom.setAttribute('role', 'button');
+            closeToolEl.dom.setAttribute('aria-label', Ext.htmlEncode(Locale.LocaleName.CloseDialog));
+        }
+
+        if (closeToolImg && closeToolImg.dom) {
+            closeToolImg.dom.setAttribute('tabindex', '0');
+            closeToolImg.dom.setAttribute('role', 'button');
+            closeToolImg.dom.setAttribute('aria-label', Ext.htmlEncode(Locale.LocaleName.CloseDialog));
+        }
+    }, 100);
+};
+                bindCloseToolKeyboard = function (popup) {
+                    var keyHandler;
+
+                    if (!popup || popup._resourceCloseToolKeyBound) {
+                        return;
+                    }
+
+                    popup._resourceCloseToolKeyBound = true;
+
+                   keyHandler = function (e) {
+    var key = e.keyCode || e.which,
+        activeEl = document.activeElement,
+        closeToolEl,
+        closeToolCmp,
+        activeCloseTool;
+
+    if (!popup || popup.destroyed || popup.destroying || !popup.el) {
+        return;
+    }
+
+    closeToolCmp = popup.down('tool[type=close]');
+    closeToolEl = closeToolCmp && closeToolCmp.el;
+
+    activeCloseTool = false;
+
+    if (closeToolEl && closeToolEl.dom && activeEl) {
+        var headerCmp = (closeToolCmp && closeToolCmp.ownerCt) ||
+                (popup.getHeader && popup.getHeader()),
+            headerDom = headerCmp && headerCmp.el && headerCmp.el.dom;
+
+        activeCloseTool =
+            closeToolEl.dom === activeEl ||
+            closeToolEl.dom.contains(activeEl) ||
+            !!Ext.fly(activeEl).up('.x-tool-close', popup.el, true) ||
+            !!Ext.fly(activeEl).up('.x-tool', popup.el, true) ||
+            // First-focus case: the header is a FocusableContainer, so DOM focus
+            // can sit on the header itself (the X only becomes activeElement after
+            // tabbing). The header has nothing actionable except the close tool, so
+            // Enter/Space while focus is anywhere in it closes the popup.
+            !!(headerDom && (headerDom === activeEl || headerDom.contains(activeEl)));
+    }
+
+    if (key === 27) {
+        e.preventDefault();
+        e.stopPropagation();
+        popup.close();
+        return false;
+    }
+
+    if (
+        activeCloseTool &&
+        (
+            key === 13 ||
+            key === 32
+        )
+    ) {
+        e.preventDefault();
+        e.stopPropagation();
+        popup.close();
+        return false;
+    }
+};
+
+                    document.addEventListener('keydown', keyHandler, true);
+
+                    popup.on('destroy', function () {
+                        document.removeEventListener('keydown', keyHandler, true);
+                    });
+                };
+
             meMain.popup = Ext.create('Ext.grid.Panel', {
                 hideHeaders: true,
                 width: 280,
@@ -1702,206 +1843,235 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 store: 'pagingStoreOwner',
                 draggable: true,
                 constrain: true,
+                closeAction: 'destroy',
+
                 columns: [{
-                        header: Ext.htmlEncode(Locale.LocaleName.ResourceTypes),
-                        dataIndex: 'name',
-                        width: 300,
-                        renderer: function (value, record, meta, rowI, colI) {
-                            return Ext.htmlEncode(value);
-                        }
+                    header: Ext.htmlEncode(Locale.LocaleName.ResourceTypes),
+                    dataIndex: 'name',
+                    width: 300,
+                    renderer: function (value, record, meta, rowI, colI) {
+                        return Ext.htmlEncode(value);
                     }
-                ],
+                }],
+
                 listeners: {
-                    close: function () {
-                        if (meMain.popup) {
-                            meMain.popup = null;
-                        }
+                    close: clearDepartmentPopup,
+                    afterrender: function (popup) {
+                        makeCloseToolFocusable(popup);
+                        bindCloseToolKeyboard(popup);
+                    },
+                    show: function (popup) {
+                        makeCloseToolFocusable(popup);
                     }
                 },
-                dockedItems: [{
-                        xtype: 'textfield',
-                        triggers: {
-                            clear: {
-                                weight: 1,
-                                cls: Ext.baseCSSPrefix + 'form-clear-trigger',
-                                hidden: true,
-                                handler: 'onClearClick',
-                                scope: 'this'
-                            },
-                            search: {
-                                weight: 1,
-                                cls: Ext.baseCSSPrefix + 'form-search-trigger',
-                                handler: 'onSearchClick',
-                                scope: 'this'
-                            }
-                        },
-                        onClearClick: function () {
-                            this.setValue('');
-                        },
 
-                        onSearchClick: function () {
-                            var onSuccess = function (result) {
+                dockedItems: [{
+                    xtype: 'textfield',
+                    triggers: {
+                        clear: {
+                            weight: 1,
+                            cls: Ext.baseCSSPrefix + 'form-clear-trigger',
+                            hidden: true,
+                            handler: 'onClearClick',
+                            scope: 'this'
+                        },
+                        search: {
+                            weight: 1,
+                            cls: Ext.baseCSSPrefix + 'form-search-trigger',
+                            handler: 'onSearchClick',
+                            scope: 'this'
+                        }
+                    },
+                    onClearClick: function () {
+                        this.setValue('');
+                    },
+                    onSearchClick: function () {
+                        var onSuccess = function (result) {
                                 Ext.getStore('pagingStoreOwner').proxy.data = result.resourceTypes;
                                 resourceAssignment.count = result.count;
+
                                 if (resourceAssignment.count > 10) {
                                     meMain.popup.down('toolbar').getComponent('userGridNextButton').enable();
                                 }
+
                                 Ext.getStore('pagingStoreOwner').load();
                             },
                             onfailure = function (result) {};
-                            glueforce.readFilteredResourceTypes(0, this.getValue(), 10, onSuccess, onfailure);
-                        },
-                        dock: 'top',
-                        emptyText: Locale.LocaleName.SearchFRT,
-                        enableKeyEvents: true,
-                        listeners: {
-                            keypress: function (field, el) {
-                                if (el.getKey() == Ext.EventObject.ENTER)
-                                    this.onSearchClick();
+
+                        glueforce.readFilteredResourceTypes(0, this.getValue(), 10, onSuccess, onfailure);
+                    },
+                    dock: 'top',
+                    emptyText: Locale.LocaleName.SearchFRT,
+                    enableKeyEvents: true,
+                    listeners: {
+                        keypress: function (field, el) {
+                            if (el.getKey() === Ext.event.Event.ENTER) {
+                                this.onSearchClick();
                             }
                         }
-                    }, {
-                        // xtype : 'toolbar',
-                        // dock : 'bottom',
-                        // height : 45,
-                        // defaults : {
-                        // xtype : 'button',
-                        // scale : 'small',
-                        // },
-                        xtype: 'toolbar',
-                        flex: 1,
-                        dock: 'bottom',
-                        ui: 'footer',
-                        height: 45,
-                        layout: {
-                            pack: 'end',
-                            type: 'hbox'
-                        },
-                        defaults: {
-                            xtype: 'button'
-                            // scale : 'small',
-                        },
-                        items: [{
-                                iconAlign: 'left',
-                                iconCls: 'icon-previous',
-                                tooltip: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
-                                ariaLabel: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
-                                disabled: true,
-                                height: '22px',
-                                style: 'padding : 0px 7px !important',
-                                itemId: 'userGridPreviousButton',
-                                handler: function () {
-                                    var me = this;
-                                    me.up('panel').down('toolbar').getComponent('userGridNextButton').enable();
-
-                                    //Save all selected records in a variable before updating the view with new data
-                                    if (me.up('panel').getSelectionModel().selected.items.length) {
-                                        me.up('panel').getSelectionModel().selected.each(function (task) {
-                                            idList.push(task.data.Id);
-                                            recordList.push(task);
-                                        });
-                                    }
-                                    resourceAssignment.offset -= 10;
-                                    if (resourceAssignment.offset == 0)
-                                        me.disable();
-
-                                    var onSuccess = function (result) {
-                                        Ext.getStore('pagingStoreOwner').proxy.data = result.resourceTypes;
-                                        resourceAssignment.count = result.count;
-                                        Ext.getStore('pagingStoreOwner').load();
-                                        var store = me.up('panel').store;
-                                        Ext.Array.forEach(recordList, function each(each) {
-                                            var indexOfSelectedRow = store.find('Id', each.data.Id);
-                                            if (indexOfSelectedRow != -1)
-                                                me.up('panel').getSelectionModel().select(indexOfSelectedRow, true);
-                                        });
-                                    },
-                                    onfailure = function (result) {};
-                                    glueforce.readFilteredResourceTypes(resourceAssignment.offset, me.up('panel').down('textfield').getValue(), 10, onSuccess, onfailure);
-
-                                }
-                            }, '->', {
-                                text: Ext.htmlEncode(Locale.LocaleName.Filter),
-                                tooltip: Ext.htmlEncode(Locale.LocaleName.Filter),
-                                itemId: 'resourceGridSelectButton',
-                                cls: 'editPopUpSaveBtn',
-                                handler: function () {
-                                    var resourceStore = LeankorApp.Gantt.gantt.taskStore.resourceStore;
-                                    this.up('panel').getSelectionModel().selected.each(function (task) {
-                                        idList.push(task.data.Id);
-                                    });
-                                    var uniqueArray = idList.filter(function (item, pos) { //remove duplicate
-                                        return idList.indexOf(item) == pos;
-                                    });
-                                    if (uniqueArray.length) {
-                                        var obj = {
-                                            resourceTypeIds: uniqueArray,
-                                            ProjectIds: [],
-                                            // UserIDs: uniqueArray,
-                                            isprojectfilter: false
-                                        };
-                                        meMain.getAllResources(obj);
-
-                                    }
-                                    delete idList;
-                                    delete recordList;
-                                    meMain.popup.close();
-                                }
-                            }, '->', {
-
-                                iconAlign: 'right',
-                                iconCls: 'icon-next',
-                                tooltip: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
-                                ariaLabel: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
-                                disabled: true,
-                                height: '22px',
-                                itemId: 'userGridNextButton',
-                                style: 'padding : 0px 7px !important',
-                                handler: function () {
-                                    var me = this;
-                                    me.up('panel').down('toolbar').getComponent('userGridPreviousButton').enable();
-
-                                    //Save all selected records in a variable before updating the view with new data
-                                    if (me.up('panel').getSelectionModel().selected.items.length) {
-                                        me.up('panel').getSelectionModel().selected.each(function (task) {
-                                            idList.push(task.data.Id);
-                                            recordList.push(task);
-                                        });
-                                    }
-                                    resourceAssignment.offset += 10;
-                                    resourceAssignment.count = resourceAssignment.count - resourceAssignment.offset;
-                                    if (resourceAssignment.count <= 10) {
-                                        me.disable();
-                                    }
-                                    var onSuccess = function (result) {
-                                        Ext.getStore('pagingStoreOwner').proxy.data = result.resourceTypes;
-                                        Ext.getStore('pagingStoreOwner').load();
-
-                                        var store = me.up('panel').store;
-                                        Ext.Array.forEach(recordList, function each(each) {
-                                            var indexOfSelectedRow = store.find('Id', each.data.Id);
-                                            if (indexOfSelectedRow != -1)
-                                                me.up('panel').getSelectionModel().select(indexOfSelectedRow, true);
-                                        });
-
-                                    },
-                                    onfailure = function (result) {};
-                                    glueforce.readFilteredResourceTypes(resourceAssignment.offset, me.up('panel').down('textfield').getValue(), 10, onSuccess, onfailure);
-                                }
-                            }
-                        ]
                     }
-                ],
+                }, {
+                    xtype: 'toolbar',
+                    flex: 1,
+                    dock: 'bottom',
+                    ui: 'footer',
+                    height: 45,
+                    layout: {
+                        pack: 'end',
+                        type: 'hbox'
+                    },
+                    defaults: {
+                        xtype: 'button'
+                    },
+                    items: [{
+                        iconAlign: 'left',
+                        iconCls: 'icon-previous',
+                        tooltip: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
+                        ariaLabel: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
+                        disabled: true,
+                        height: '22px',
+                        style: 'padding : 0px 7px !important',
+                        itemId: 'userGridPreviousButton',
+                        handler: function () {
+                            var me = this;
 
+                            me.up('panel').down('toolbar').getComponent('userGridNextButton').enable();
+
+                            if (me.up('panel').getSelectionModel().selected.items.length) {
+                                me.up('panel').getSelectionModel().selected.each(function (task) {
+                                    idList.push(task.data.Id);
+                                    recordList.push(task);
+                                });
+                            }
+
+                            resourceAssignment.offset -= 10;
+
+                            if (resourceAssignment.offset === 0) {
+                                me.disable();
+                            }
+
+                            var onSuccess = function (result) {
+                                    Ext.getStore('pagingStoreOwner').proxy.data = result.resourceTypes;
+                                    resourceAssignment.count = result.count;
+                                    Ext.getStore('pagingStoreOwner').load();
+
+                                    var store = me.up('panel').store;
+
+                                    Ext.Array.forEach(recordList, function each(each) {
+                                        var indexOfSelectedRow = store.find('Id', each.data.Id);
+
+                                        if (indexOfSelectedRow !== -1) {
+                                            me.up('panel').getSelectionModel().select(indexOfSelectedRow, true);
+                                        }
+                                    });
+                                },
+                                onfailure = function (result) {};
+
+                            glueforce.readFilteredResourceTypes(
+                                resourceAssignment.offset,
+                                me.up('panel').down('textfield').getValue(),
+                                10,
+                                onSuccess,
+                                onfailure
+                            );
+                        }
+                    }, '->', {
+                        text: Ext.htmlEncode(Locale.LocaleName.Filter),
+                        tooltip: Ext.htmlEncode(Locale.LocaleName.Filter),
+                        itemId: 'resourceGridSelectButton',
+                        cls: 'editPopUpSaveBtn',
+                        handler: function () {
+                            this.up('panel').getSelectionModel().selected.each(function (task) {
+                                idList.push(task.data.Id);
+                            });
+
+                            var uniqueArray = idList.filter(function (item, pos) {
+                                return idList.indexOf(item) === pos;
+                            });
+
+                            if (uniqueArray.length) {
+                                meMain.getAllResources({
+                                    resourceTypeIds: uniqueArray,
+                                    ProjectIds: [],
+                                    isprojectfilter: false
+                                });
+                            }
+
+                            delete idList;
+                            delete recordList;
+
+                            if (meMain.popup && !meMain.popup.destroyed) {
+                                meMain.popup.close();
+                            }
+                        }
+                    }, '->', {
+                        iconAlign: 'right',
+                        iconCls: 'icon-next',
+                        tooltip: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
+                        ariaLabel: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
+                        disabled: true,
+                        height: '22px',
+                        itemId: 'userGridNextButton',
+                        style: 'padding : 0px 7px !important',
+                        handler: function () {
+                            var me = this;
+
+                            me.up('panel').down('toolbar').getComponent('userGridPreviousButton').enable();
+
+                            if (me.up('panel').getSelectionModel().selected.items.length) {
+                                me.up('panel').getSelectionModel().selected.each(function (task) {
+                                    idList.push(task.data.Id);
+                                    recordList.push(task);
+                                });
+                            }
+
+                            resourceAssignment.offset += 10;
+                            resourceAssignment.count = resourceAssignment.count - resourceAssignment.offset;
+
+                            if (resourceAssignment.count <= 10) {
+                                me.disable();
+                            }
+
+                            var onSuccess = function (result) {
+                                    Ext.getStore('pagingStoreOwner').proxy.data = result.resourceTypes;
+                                    Ext.getStore('pagingStoreOwner').load();
+
+                                    var store = me.up('panel').store;
+
+                                    Ext.Array.forEach(recordList, function each(each) {
+                                        var indexOfSelectedRow = store.find('Id', each.data.Id);
+
+                                        if (indexOfSelectedRow !== -1) {
+                                            me.up('panel').getSelectionModel().select(indexOfSelectedRow, true);
+                                        }
+                                    });
+                                },
+                                onfailure = function (result) {};
+
+                            glueforce.readFilteredResourceTypes(
+                                resourceAssignment.offset,
+                                me.up('panel').down('textfield').getValue(),
+                                10,
+                                onSuccess,
+                                onfailure
+                            );
+                        }
+                    }]
+                }]
             });
+
             LeankorApp.util.AccessibilityUtil.decoratePopup(meMain.popup);
             meMain.popup.showBy(combo, 'br');
             LeankorApp.util.AccessibilityUtil.initPopupKeyboardNav(meMain.popup, combo);
             meMain.bindResourceGridCloseToolKeys(meMain.popup, combo);
+
+            makeCloseToolFocusable(meMain.popup);
+            bindCloseToolKeyboard(meMain.popup);
+
             combo.reset();
             break;
+
         case "By Role Hierarchy":
-            // alert('By Role Hierarchy');
             storeTree = Ext.getStore('roleHierarchy');
             storeTree.removeAll();
 
@@ -1918,7 +2088,6 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 mode: 'MULTI',
                 multiSelect: true,
                 rootVisible: false,
-                // useArrows : true,
                 displayField: 'Name',
                 allowDeselect: true,
                 cls: 'mycustomTree_Role',
@@ -1926,32 +2095,36 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 listeners: {
                     cellclick: function (me, td, cellIndex, record, tr, rowIndex, e, eOpts) {
                         var mee = this,
-                        idList = [];
+                            idList = [];
+
                         mee.dorec = function (rec, index) {
                             rec.SubordinateRoles.forEach(mee.dorec);
                             idList.push(rec.RoleId);
-                        }
+                        };
+
                         Ext.Array.forEach(record.data.SubordinateRoles, mee.dorec);
                         idList.push(record.data.RoleId);
+
                         if (idList.length) {
-                            var obj = {
+                            meMain.getAllResources({
                                 resourceTypeIds: idList,
                                 ProjectIds: [],
                                 UserIDs: [],
                                 isprojectfilter: false
-                            };
-                            meMain.getAllResources(obj);
-
+                            });
                         }
+
                         popup.close();
                     }
                 }
             });
+
             meMain.bindResourceTypePopupAccessibility(popup, {
                 label: Locale.LocaleName.RoleHierarchy,
                 recordLabelPrefix: (Locale.LocaleName && Locale.LocaleName.RoleHierarchy) || 'Role',
                 focusTarget: combo
             });
+
             meMain.bindHeaderPopupKeys(popup, {
                 activateRows: true,
                 focusTarget: combo,
@@ -1961,22 +2134,23 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 enterHandler: function (popup) {
                     meMain.applyRoleHierarchyFilter(
                         meMain.getHeaderPopupRecord(popup),
-                        popup);
+                        popup
+                    );
                 }
             });
+
             popup.setLoading(Ext.htmlEncode(Locale.LocaleName.Loading) + '...');
+
             glueforce.getRoleHierarchy(function (columnSuccess) {
                 if (columnSuccess.length) {
-                    // storeTree.add(columnSuccess);
                     columnSuccess = columnSuccess[0].SubordinateRoles;
                     storeTree.proxy.data = columnSuccess;
                     storeTree.add(columnSuccess);
                     storeTree.load();
                     popup.setLoading(false);
-                    // storeTree.getProxy().setData(columnSuccess);
                 }
-
             });
+
             this.updatePopupOverflow(popup);
             popup.showBy(combo, 'tc-bc?');
             combo.reset();
@@ -1984,8 +2158,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
 
         default:
             break;
-        }
-    },
+    }
+},
 
     /**
     @Method - getAllResources
@@ -1995,10 +2169,10 @@ Ext.define('LeankorApp.view.MainViewportController', {
     getAllResources: function (obj) {
         LeankorApp.Gantt.getView().setLoading(Ext.htmlEncode(Locale.LocaleName.Loading) + '...');
         var me = this,
-        weekendDays,
-        taskStore = LeankorApp.Gantt.gantt.taskStore,
-        assignmentgridpanel = Ext.ComponentQuery.query('[xtype=assignmentgridpanel]')[0],
-        mapOfSameResourceType = new Map();
+            weekendDays,
+            taskStore = LeankorApp.Gantt.gantt.taskStore,
+            assignmentgridpanel = Ext.ComponentQuery.query('[xtype=assignmentgridpanel]')[0],
+            mapOfSameResourceType = new Map();
         mapOfSameResourceName = new Map();
         me.objFilter = obj;
         me.objFilter.StartDate = JSON.parse(JSON.stringify(LeankorApp.Gantt.gantt.timeAxis.adjustedStart));
@@ -2016,8 +2190,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
         glueforce.readAllResourceTypes(obj, function (result) {
             resourceStoreType = Ext.getStore('resourcesStoreCustom');
             var resourceStore = taskStore.resourceStore,
-            assignmenetStore = Ext.getStore('assignmentStore'),
-            defaultCalendar = taskStore.getCalendar();
+                assignmenetStore = Ext.getStore('assignmentStore'),
+                defaultCalendar = taskStore.getCalendar();
             portfolio.workingHoursPerDay = result.workingHoursPerDay;
             weekendDays = me.getWeekendDays();
             // var calendarSevenDays = Ext.create('Gnt.data.calendar.BusinessTime', {
@@ -2105,9 +2279,9 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 resourceStoreType.loadData(result.resources);
                 taskStore.each(function (task) {
                     var assignments = task.getAssignments(),
-                    unit = 0,
-                    workingHours = portfolio.workingHoursPerDay,
-                    mapOfNewAssignment = new Map();
+                        unit = 0,
+                        workingHours = portfolio.workingHoursPerDay,
+                        mapOfNewAssignment = new Map();
 
                     resourceTypeIds = [];
                     task.data.assignmentData = []; //put original assignment data in a variable to use it while displaying name in namecolumn
@@ -2259,6 +2433,19 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 setTimeout(function () {
                     assignmentgridpanel.getStore().sort('Name', 'ASC');
                     LeankorApp.Gantt.getView().setLoading(false);
+                    // Resource types are now on the board — land keyboard focus on
+                    // the board's column divider once the board has actually
+                    // re-laid out, instead of guessing with a fixed delay. The
+                    // focus move is keyboard-only and won't override a focus the
+                    // user has already moved (see focusBoardSplitter).
+                    var boardView = LeankorApp.Gantt.getView();
+                    if (boardView && boardView.on) {
+                        boardView.on('refresh', function () {
+                            LeankorApp.util.AccessibilityUtil.focusBoardSplitter();
+                        }, null, { single: true });
+                    } else {
+                        LeankorApp.util.AccessibilityUtil.focusBoardSplitter();
+                    }
                 }, 2000);
             } else {
 
@@ -2348,26 +2535,26 @@ Ext.define('LeankorApp.view.MainViewportController', {
     convertDUInGanttFormat: function (du) {
         var durationFormate = 'd';
         switch (du) {
-        case "Days":
-            durationFormate = "d";
-            break;
-        case "Hours":
-            durationFormate = "h";
-            break;
-        case "Months":
-            durationFormate = "mo";
-            break;
-        case "Years":
-            durationFormate = "y";
-            break;
-        case "Weeks":
-            durationFormate = "w";
-            break;
-        case "Minutes":
-            durationFormate = "mi";
-            break;
-        default:
-            break;
+            case "Days":
+                durationFormate = "d";
+                break;
+            case "Hours":
+                durationFormate = "h";
+                break;
+            case "Months":
+                durationFormate = "mo";
+                break;
+            case "Years":
+                durationFormate = "y";
+                break;
+            case "Weeks":
+                durationFormate = "w";
+                break;
+            case "Minutes":
+                durationFormate = "mi";
+                break;
+            default:
+                break;
         }
         return durationFormate;
     },
@@ -2379,34 +2566,34 @@ Ext.define('LeankorApp.view.MainViewportController', {
     convertDUInFullForm: function (du) {
         var durationFormate = 'Days';
         switch (du) {
-        case "d":
-            durationFormate = "Days";
-            break;
-        case "h":
-            durationFormate = "Hours";
-            break;
-        case "mo":
-            durationFormate = "Months";
-            break;
-        case "y":
-            durationFormate = "Years";
-            break;
-        case "w":
-            durationFormate = "Weeks";
-            break;
-        case "mi":
-            durationFormate = "Minutes";
-            break;
-        default:
-            break;
+            case "d":
+                durationFormate = "Days";
+                break;
+            case "h":
+                durationFormate = "Hours";
+                break;
+            case "mo":
+                durationFormate = "Months";
+                break;
+            case "y":
+                durationFormate = "Years";
+                break;
+            case "w":
+                durationFormate = "Weeks";
+                break;
+            case "mi":
+                durationFormate = "Minutes";
+                break;
+            default:
+                break;
         }
         return durationFormate;
     },
     applyFilters: function () {
         if (Ext.ComponentQuery.query("#searchfilterfield")[0].getValue() != '') {
             var value = Ext.ComponentQuery.query("#searchfilterfield")[0].getValue(),
-            regexp = new RegExp(Ext.String.escapeRegex(value), 'i')
-                LeankorApp.Gantt.gantt.taskStore.resourceStore.filter('name', regexp);
+                regexp = new RegExp(Ext.String.escapeRegex(value), 'i')
+            LeankorApp.Gantt.gantt.taskStore.resourceStore.filter('name', regexp);
         } else {
             LeankorApp.Gantt.gantt.taskStore.resourceStore.clearFilter();
         }
@@ -2505,12 +2692,12 @@ Ext.define('LeankorApp.view.MainViewportController', {
             avaialability = ['00:00-24:00'];
         } else {
             var NumberOfHoursPerShift = workingHours / 2,
-            NumberOfHoursFirstShift = Math.floor(NumberOfHoursPerShift),
-            NumberOfHoursSecondShift = Math.ceil(NumberOfHoursPerShift),
-            firstShiftStart = 1,
-            firstShiftEnd = 1 + NumberOfHoursFirstShift,
-            secondShiftStart = 23 - NumberOfHoursSecondShift,
-            secondShiftEnd = 23;
+                NumberOfHoursFirstShift = Math.floor(NumberOfHoursPerShift),
+                NumberOfHoursSecondShift = Math.ceil(NumberOfHoursPerShift),
+                firstShiftStart = 1,
+                firstShiftEnd = 1 + NumberOfHoursFirstShift,
+                secondShiftStart = 23 - NumberOfHoursSecondShift,
+                secondShiftEnd = 23;
 
             firstShiftStart = firstShiftStart.toString().length == 1 ? '0' + firstShiftStart.toString() : firstShiftStart.toString();
             firstShiftEnd = firstShiftEnd.toString().length == 1 ? '0' + firstShiftEnd.toString() : firstShiftEnd.toString();
@@ -2608,8 +2795,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
         // secondDay like sunday we assume
         // firstDay like Saturday we assume
         var firstDayOfTheWeek = glueforce.getWorkspaceConfig().FirstDayOfTheWeek,
-        firstDay,
-        secondDay;
+            firstDay,
+            secondDay;
         if (Ext.isEmpty(firstDayOfTheWeek) || firstDayOfTheWeek > 6 || firstDayOfTheWeek < 0) {
             firstDayOfTheWeek = 1;
         }
@@ -2632,8 +2819,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
             return true;
         }
         var ganttPanel = LeankorApp.Gantt.gantt,
-        meMain = this,
-        closeFocusTarget = e && e.target ? e.target : column;
+            meMain = this,
+            closeFocusTarget = e && e.target ? e.target : column;
         if (closeFocusTarget && !closeFocusTarget.hasAttribute('tabindex')) {
             closeFocusTarget.setAttribute('tabindex', '-1');
         }
@@ -2641,7 +2828,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
         resourceAssignment.offset = 0;
         Ext.getStore('pagingStoreOwner').removeAll();
         var idList = [],
-        recordList = [];
+            recordList = [];
         meMain.popup = Ext.create('Ext.grid.Panel', {
             hideHeaders: true,
             width: 280,
@@ -2660,200 +2847,279 @@ Ext.define('LeankorApp.view.MainViewportController', {
             draggable: true,
             constrain: true,
             columns: [{
-                    header: 'Resource Type',
-                    dataIndex: 'name',
-                    width: 300,
-                    renderer: function (value, record, meta, rowI, colI) {
-                        return Ext.htmlEncode(value);
-                    }
+                header: 'Resource Type',
+                dataIndex: 'name',
+                width: 300,
+                renderer: function (value, record, meta, rowI, colI) {
+                    return Ext.htmlEncode(value);
                 }
+            }
             ],
             listeners: {
+                // Suppress focus-driven scrolling only while this panel is open so
+                // opening it at >100% zoom doesn't jump the parent Lightning page.
+                beforeshow: function () {
+                    LeankorApp.suppressFocusScroll = true;
+                },
+                hide: function () {
+                    LeankorApp.suppressFocusScroll = false;
+                },
                 close: function () {
+                    LeankorApp.suppressFocusScroll = false;
                     if (meMain.popup) {
                         meMain.popup = null;
                     }
                 }
             },
             dockedItems: [{
-                    xtype: 'textfield',
-                    triggers: {
-                        clear: {
-                            weight: 1,
-                            cls: Ext.baseCSSPrefix + 'form-clear-trigger',
-                            hidden: true,
-                            handler: 'onClearClick',
-                            scope: 'this'
-                        },
-                        search: {
-                            weight: 1,
-                            cls: Ext.baseCSSPrefix + 'form-search-trigger',
-                            handler: 'onSearchClick',
-                            scope: 'this'
-                        }
+                xtype: 'textfield',
+                triggers: {
+                    clear: {
+                        weight: 1,
+                        cls: Ext.baseCSSPrefix + 'form-clear-trigger',
+                        hidden: true,
+                        handler: 'onClearClick',
+                        scope: 'this'
                     },
-                    onClearClick: function () {
-                        this.setValue('');
-                    },
+                    search: {
+                        weight: 1,
+                        cls: Ext.baseCSSPrefix + 'form-search-trigger',
+                        handler: 'onSearchClick',
+                        scope: 'this'
+                    }
+                },
+                onClearClick: function () {
+                    this.setValue('');
+                },
 
-                    onSearchClick: function () {
-                        glueforce.readFilteredResourceTypes(0, this.getValue(), 10, function (result) {
+                onSearchClick: function () {
+                    glueforce.readFilteredResourceTypes(0, this.getValue(), 10, function (result) {
+                        Ext.getStore('pagingStoreOwner').proxy.data = result.resourceTypes;
+                        resourceAssignment.count = result.count;
+                        if (resourceAssignment.count > 10) {
+                            meMain.popup.down('toolbar').getComponent('userGridNextButton').enable();
+                        }
+                        Ext.getStore('pagingStoreOwner').load();
+                    }, function (result) { });
+                },
+                dock: 'top',
+                emptyText: Locale.LocaleName.SearchFRT,
+                enableKeyEvents: true,
+                listeners: {
+                    keypress: function (field, el) {
+                        if (el.getKey() == Ext.event.Event.ENTER)
+                            this.onSearchClick();
+                    }
+                }
+            }, {
+                xtype: 'toolbar',
+                flex: 1,
+                dock: 'bottom',
+                ui: 'footer',
+                height: 45,
+                layout: {
+                    pack: 'end',
+                    type: 'hbox'
+                },
+                defaults: {
+                    xtype: 'button'
+                    // scale : 'small',
+                },
+                items: [{
+                    iconAlign: 'left',
+                    iconCls: 'icon-previous',
+                    tooltip: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
+                    ariaLabel: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
+                    disabled: true,
+                    height: '22px',
+                    style: 'padding : 0px 7px !important',
+                    itemId: 'userGridPreviousButton',
+                    handler: function () {
+                        var me = this;
+                        me.up('panel').down('toolbar').getComponent('userGridNextButton').enable();
+
+                        //Save all selected records in a variable before updating the view with new data
+                        if (me.up('panel').getSelectionModel().selected.items.length) {
+                            me.up('panel').getSelectionModel().selected.each(function (task) {
+                                idList.push(task.data.Id);
+                                recordList.push(task);
+                            });
+                        }
+                        resourceAssignment.offset -= 10;
+                        if (resourceAssignment.offset == 0)
+                            me.disable();
+
+                        var onSuccess = function (result) {
                             Ext.getStore('pagingStoreOwner').proxy.data = result.resourceTypes;
                             resourceAssignment.count = result.count;
-                            if (resourceAssignment.count > 10) {
-                                meMain.popup.down('toolbar').getComponent('userGridNextButton').enable();
-                            }
                             Ext.getStore('pagingStoreOwner').load();
-                        }, function (result) {});
-                    },
-                    dock: 'top',
-                    emptyText: Locale.LocaleName.SearchFRT,
-                    enableKeyEvents: true,
-                    listeners: {
-                        keypress: function (field, el) {
-                            if (el.getKey() == Ext.EventObject.ENTER)
-                                this.onSearchClick();
-                        }
+                            var store = me.up('panel').store;
+                            Ext.Array.forEach(recordList, function each(each) {
+                                var indexOfSelectedRow = store.find('Id', each.data.Id);
+                                if (indexOfSelectedRow != -1)
+                                    me.up('panel').getSelectionModel().select(indexOfSelectedRow, true);
+                            });
+                        },
+                            onfailure = function (result) { };
+                        glueforce.readFilteredResourceTypes(resourceAssignment.offset, me.up('panel').down('textfield').getValue(), 10, onSuccess, onfailure);
+
                     }
-                }, {
-                    xtype: 'toolbar',
-                    flex: 1,
-                    dock: 'bottom',
-                    ui: 'footer',
-                    height: 45,
-                    layout: {
-                        pack: 'end',
-                        type: 'hbox'
-                    },
-                    defaults: {
-                        xtype: 'button'
-                        // scale : 'small',
-                    },
-                    items: [{
-                            iconAlign: 'left',
-                            iconCls: 'icon-previous',
-                            tooltip: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
-                            ariaLabel: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
-                            disabled: true,
-                            height: '22px',
-                            style: 'padding : 0px 7px !important',
-                            itemId: 'userGridPreviousButton',
-                            handler: function () {
-                                var me = this;
-                                me.up('panel').down('toolbar').getComponent('userGridNextButton').enable();
+                }, '->', {
+                    text: Ext.htmlEncode(Locale.LocaleName.SelectLbl),
+                    tooltip: Ext.htmlEncode(Locale.LocaleName.SelectLbl),
+                    itemId: 'resourceGridSelectButton',
+                    cls: 'editPopUpSaveBtn',
+                    handler: function () {
+                        var resourceStore = LeankorApp.Gantt.gantt.taskStore.resourceStore;
+                        this.up('panel').getSelectionModel().selected.each(function (resource) {
 
-                                //Save all selected records in a variable before updating the view with new data
-                                if (me.up('panel').getSelectionModel().selected.items.length) {
-                                    me.up('panel').getSelectionModel().selected.each(function (task) {
-                                        idList.push(task.data.Id);
-                                        recordList.push(task);
-                                    });
-                                }
-                                resourceAssignment.offset -= 10;
-                                if (resourceAssignment.offset == 0)
-                                    me.disable();
-
-                                var onSuccess = function (result) {
-                                    Ext.getStore('pagingStoreOwner').proxy.data = result.resourceTypes;
-                                    resourceAssignment.count = result.count;
-                                    Ext.getStore('pagingStoreOwner').load();
-                                    var store = me.up('panel').store;
-                                    Ext.Array.forEach(recordList, function each(each) {
-                                        var indexOfSelectedRow = store.find('Id', each.data.Id);
-                                        if (indexOfSelectedRow != -1)
-                                            me.up('panel').getSelectionModel().select(indexOfSelectedRow, true);
-                                    });
-                                },
-                                onfailure = function (result) {};
-                                glueforce.readFilteredResourceTypes(resourceAssignment.offset, me.up('panel').down('textfield').getValue(), 10, onSuccess, onfailure);
-
+                            // if (resourceStore.find('Id', resource.data.Id) == -1) {
+                            idList.push(resource.data.Id);
+                            // }
+                        });
+                        var uniqueArray = idList.filter(function (item, pos) { //remove duplicate
+                            return idList.indexOf(item) == pos;
+                        });
+                        if (uniqueArray.length) {
+                            var obj = meMain.objFilter;
+                            if (typeof obj != 'undefined') {
+                                obj.resourceTypeIds = obj.resourceTypeIds.concat(uniqueArray);
+                            } else {
+                                obj = {
+                                    // AllRoleIds: [],
+                                    ProjectIds: [],
+                                    resourceTypeIds: uniqueArray,
+                                    isprojectfilter: false
+                                };
                             }
-                        }, '->', {
-                            text: Ext.htmlEncode(Locale.LocaleName.SelectLbl),
-                            tooltip: Ext.htmlEncode(Locale.LocaleName.SelectLbl),
-                            itemId: 'resourceGridSelectButton',
-                            cls: 'editPopUpSaveBtn',
-                            handler: function () {
-                                var resourceStore = LeankorApp.Gantt.gantt.taskStore.resourceStore;
-                                this.up('panel').getSelectionModel().selected.each(function (resource) {
+                            meMain.getAllResources(obj);
 
-                                    // if (resourceStore.find('Id', resource.data.Id) == -1) {
-                                    idList.push(resource.data.Id);
-                                    // }
-                                });
-                                var uniqueArray = idList.filter(function (item, pos) { //remove duplicate
-                                    return idList.indexOf(item) == pos;
-                                });
-                                if (uniqueArray.length) {
-                                    var obj = meMain.objFilter;
-                                    if (typeof obj != 'undefined') {
-                                        obj.resourceTypeIds = obj.resourceTypeIds.concat(uniqueArray);
-                                    } else {
-                                        obj = {
-                                            // AllRoleIds: [],
-                                            ProjectIds: [],
-                                            resourceTypeIds: uniqueArray,
-                                            isprojectfilter: false
-                                        };
-                                    }
-                                    meMain.getAllResources(obj);
-
-                                }
-                                delete idList;
-                                delete recordList;
-                                meMain.popup.close();
-                            }
-                        }, '->', {
-
-                            iconAlign: 'right',
-                            iconCls: 'icon-next',
-                            tooltip: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
-                            ariaLabel: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
-                            disabled: true,
-                            height: '22px',
-                            itemId: 'userGridNextButton',
-                            style: 'padding : 0px 7px !important',
-                            handler: function () {
-                                var me = this;
-                                me.up('panel').down('toolbar').getComponent('userGridPreviousButton').enable();
-
-                                //Save all selected records in a variable before updating the view with new data
-                                if (me.up('panel').getSelectionModel().selected.items.length) {
-                                    me.up('panel').getSelectionModel().selected.each(function (task) {
-                                        idList.push(task.data.Id);
-                                        recordList.push(task);
-                                    });
-                                }
-                                resourceAssignment.offset += 10;
-                                resourceAssignment.count = resourceAssignment.count - resourceAssignment.offset;
-                                if (resourceAssignment.count <= 10) {
-                                    me.disable();
-                                }
-                                var onSuccess = function (result) {
-                                    Ext.getStore('pagingStoreOwner').proxy.data = result.resourceTypes;
-                                    Ext.getStore('pagingStoreOwner').load();
-
-                                    var store = me.up('panel').store;
-                                    Ext.Array.forEach(recordList, function each(each) {
-                                        var indexOfSelectedRow = store.find('Id', each.data.Id);
-                                        if (indexOfSelectedRow != -1)
-                                            me.up('panel').getSelectionModel().select(indexOfSelectedRow, true);
-                                    });
-
-                                },
-                                onfailure = function (result) {};
-                                glueforce.readFilteredResourceTypes(resourceAssignment.offset, me.up('panel').down('textfield').getValue(), 10, onSuccess, onfailure);
-                            }
                         }
-                    ]
+                        delete idList;
+                        delete recordList;
+                        meMain.popup.close();
+                    }
+                }, '->', {
+
+                    iconAlign: 'right',
+                    iconCls: 'icon-next',
+                    tooltip: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
+                    ariaLabel: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
+                    disabled: true,
+                    height: '22px',
+                    itemId: 'userGridNextButton',
+                    style: 'padding : 0px 7px !important',
+                    handler: function () {
+                        var me = this;
+                        me.up('panel').down('toolbar').getComponent('userGridPreviousButton').enable();
+
+                        //Save all selected records in a variable before updating the view with new data
+                        if (me.up('panel').getSelectionModel().selected.items.length) {
+                            me.up('panel').getSelectionModel().selected.each(function (task) {
+                                idList.push(task.data.Id);
+                                recordList.push(task);
+                            });
+                        }
+                        resourceAssignment.offset += 10;
+                        resourceAssignment.count = resourceAssignment.count - resourceAssignment.offset;
+                        if (resourceAssignment.count <= 10) {
+                            me.disable();
+                        }
+                        var onSuccess = function (result) {
+                            Ext.getStore('pagingStoreOwner').proxy.data = result.resourceTypes;
+                            Ext.getStore('pagingStoreOwner').load();
+
+                            var store = me.up('panel').store;
+                            Ext.Array.forEach(recordList, function each(each) {
+                                var indexOfSelectedRow = store.find('Id', each.data.Id);
+                                if (indexOfSelectedRow != -1)
+                                    me.up('panel').getSelectionModel().select(indexOfSelectedRow, true);
+                            });
+
+                        },
+                            onfailure = function (result) { };
+                        glueforce.readFilteredResourceTypes(resourceAssignment.offset, me.up('panel').down('textfield').getValue(), 10, onSuccess, onfailure);
+                    }
                 }
+                ]
+            }
             ],
 
         });
         LeankorApp.util.AccessibilityUtil.decoratePopup(meMain.popup);
         meMain.popup.showBy(column, 'br');
         LeankorApp.util.AccessibilityUtil.initPopupKeyboardNav(meMain.popup, closeFocusTarget);
-        meMain.bindResourceGridCloseToolKeys(meMain.popup, closeFocusTarget);
+        // Close on Enter/Space on the X tool (and Esc), in one press — same
+        // capture-phase handler the Resource Type popup uses. Without this, Enter
+        // on the focused close icon does not close the popup.
+        meMain.bindResourcePopupCloseKeys(meMain.popup);
+
+    },
+
+    /**
+     * Capture-phase keyboard close for the floating resource grid popups.
+     * Esc closes; Enter/Space closes when focus is on the close (X) tool — or
+     * anywhere in the header, since the header is an ExtJS FocusableContainer and
+     * DOM focus can sit on the header rather than the tool itself on first focus.
+     * The native listener is removed when the popup is destroyed.
+     */
+    bindResourcePopupCloseKeys: function (popup) {
+        var keyHandler;
+
+        if (!popup || popup._resourceCloseToolKeyBound) {
+            return;
+        }
+        popup._resourceCloseToolKeyBound = true;
+
+        keyHandler = function (e) {
+            var key = e.keyCode || e.which,
+                activeEl = document.activeElement,
+                closeToolCmp,
+                closeToolEl,
+                headerCmp,
+                headerDom,
+                activeCloseTool;
+
+            if (!popup || popup.destroyed || popup.destroying || !popup.el) {
+                return;
+            }
+
+            closeToolCmp = popup.down('tool[type=close]');
+            closeToolEl = closeToolCmp && closeToolCmp.el;
+            activeCloseTool = false;
+
+            if (closeToolEl && closeToolEl.dom && activeEl) {
+                headerCmp = (closeToolCmp && closeToolCmp.ownerCt) ||
+                    (popup.getHeader && popup.getHeader());
+                headerDom = headerCmp && headerCmp.el && headerCmp.el.dom;
+
+                activeCloseTool =
+                    closeToolEl.dom === activeEl ||
+                    closeToolEl.dom.contains(activeEl) ||
+                    !!Ext.fly(activeEl).up('.x-tool-close', popup.el, true) ||
+                    !!Ext.fly(activeEl).up('.x-tool', popup.el, true) ||
+                    !!(headerDom && (headerDom === activeEl || headerDom.contains(activeEl)));
+            }
+
+            if (key === 27) {
+                e.preventDefault();
+                e.stopPropagation();
+                popup.close();
+                return false;
+            }
+
+            if (activeCloseTool && (key === 13 || key === 32)) {
+                e.preventDefault();
+                e.stopPropagation();
+                popup.close();
+                return false;
+            }
+        };
+
+        document.addEventListener('keydown', keyHandler, true);
+        popup.on('destroy', function () {
+            document.removeEventListener('keydown', keyHandler, true);
+        });
     },
 
     /**
@@ -2864,9 +3130,9 @@ Ext.define('LeankorApp.view.MainViewportController', {
     addNewResources: function (obj) {
         LeankorApp.Gantt.getView().setLoading('Loading Resources ...');
         var me = this,
-        weekendDays,
-        taskStore = LeankorApp.Gantt.gantt.taskStore,
-        assignmentgridpanel = Ext.ComponentQuery.query('[xtype=assignmentgridpanel]')[0];
+            weekendDays,
+            taskStore = LeankorApp.Gantt.gantt.taskStore,
+            assignmentgridpanel = Ext.ComponentQuery.query('[xtype=assignmentgridpanel]')[0];
         me.objFilter = obj;
         me.objFilter.StartDate = JSON.parse(JSON.stringify(LeankorApp.Gantt.gantt.timeAxis.adjustedStart));
         me.objFilter.DueDate = JSON.parse(JSON.stringify(LeankorApp.Gantt.gantt.timeAxis.adjustedEnd));
@@ -2883,8 +3149,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
         glueforce.getAllResources(obj, function (result) {
 
             var resourceStore = Ext.getStore('resourcesStoreCustom'),
-            assignmenetStore = Ext.getStore('assignmentStore'),
-            defaultCalendar = taskStore.getCalendar();
+                assignmenetStore = Ext.getStore('assignmentStore'),
+                defaultCalendar = taskStore.getCalendar();
             portfolio.workingHoursPerDay = result.workingHoursPerDay;
             weekendDays = me.getWeekendDays();
             // var calendarSevenDays = Ext.create('Gnt.data.calendar.BusinessTime', {
@@ -3015,11 +3281,11 @@ Ext.define('LeankorApp.view.MainViewportController', {
 
     bindResourceGridCloseToolKeys: function (popup, focusTarget) {
         var me = this,
-        bindCloseTool,
-        bindRows,
-        syncRows,
-        focusRow,
-        getRows;
+            bindRows,
+            syncRows,
+            focusRow,
+            getRows,
+            boundStore;
 
         if (!popup || popup.leankorResourceGridCloseKeysBound) {
             return;
@@ -3027,11 +3293,23 @@ Ext.define('LeankorApp.view.MainViewportController', {
 
         popup.leankorResourceGridCloseKeysBound = true;
         popup.leankorResourceGridCloseFocusTarget = focusTarget;
+        // NOTE: close / Esc / the X tool are handled exactly like the working
+        // project popup — by AccessibilityUtil.initPopupKeyboardNav (Esc and the
+        // close tool both route through closeComponent -> popup.close()). This
+        // method does NOT touch close handling; it only wires the grid's row
+        // arrow-key navigation.
 
         getRows = function () {
-            var view = popup.getView && popup.getView(),
-            rows;
+            var view,
+                rows;
 
+            // The shared pagingStoreOwner store keeps these listeners alive after the popup
+            // is destroyed; getView() throws internally once the grid is torn down, so bail.
+            if (popup.destroyed) {
+                return [];
+            }
+
+            view = popup.getView && popup.getView();
             if (!view || !view.el) {
                 return [];
             }
@@ -3043,8 +3321,13 @@ Ext.define('LeankorApp.view.MainViewportController', {
         };
 
         focusRow = function (row) {
-            var view = popup.getView && popup.getView();
+            var view;
 
+            if (popup.destroyed) {
+                return false;
+            }
+
+            view = popup.getView && popup.getView();
             if (!row || !view || !view.el) {
                 return false;
             }
@@ -3057,11 +3340,22 @@ Ext.define('LeankorApp.view.MainViewportController', {
         };
 
         syncRows = function () {
-            var view = popup.getView && popup.getView(),
-            rows = getRows(),
-            selectionModel = popup.getSelectionModel && popup.getSelectionModel(),
-            selected = selectionModel && selectionModel.getSelection && selectionModel.getSelection(),
-            selectedRecord = selected && selected[0],
+            var view,
+                rows,
+                selectionModel,
+                selected,
+                selectedRecord,
+                selectedRow;
+
+            if (popup.destroyed) {
+                return;
+            }
+
+            view = popup.getView && popup.getView();
+            rows = getRows();
+            selectionModel = popup.getSelectionModel && popup.getSelectionModel();
+            selected = selectionModel && selectionModel.getSelection && selectionModel.getSelection();
+            selectedRecord = selected && selected[0];
             selectedRow = selectedRecord && view && view.getNode && view.getNode(selectedRecord);
 
             if (view && view.el && view.el.dom) {
@@ -3082,7 +3376,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
 
         bindRows = function () {
             var view = popup.getView && popup.getView(),
-            store = popup.getStore && popup.getStore();
+                store = popup.getStore && popup.getStore();
 
             if (!view || !view.el || view.leankorResourceGridRowsBound) {
                 syncRows();
@@ -3093,27 +3387,40 @@ Ext.define('LeankorApp.view.MainViewportController', {
             syncRows();
             view.el.on('focus', function () {
                 var rows = getRows(),
-                activeRow = view.el.down('.lk-popup-row-focused', true) || rows[0];
+                    activeRow = view.el.down('.lk-popup-row-focused', true) || rows[0];
 
                 Ext.defer(function () {
                     focusRow(activeRow);
                 }, 1);
             });
+            // Drop the row focus ring once focus leaves the list entirely (to the
+            // Close (X) tool, a footer button, or the search field). The ring is a
+            // JS class (.lk-popup-row-focused) that does not track real focus, so
+            // without this it lingers on the last row while another control is
+            // focused — the Close tool and a row would both look focused at once.
+            // focusleave only fires when focus exits view.el and all its rows, so
+            // Up/Down moves between rows (which stay inside view.el) are unaffected.
+            view.el.on('focusleave', function () {
+                if (popup.destroyed || !view.el) {
+                    return;
+                }
+                view.el.select('.lk-popup-row-focused').removeCls('lk-popup-row-focused');
+            });
             view.el.on('keydown', function (event, target) {
                 var key = event.getKey && event.getKey(),
-                downKey = Ext.EventObject.DOWN || 40,
-                upKey = Ext.EventObject.UP || 38,
-                homeKey = Ext.EventObject.HOME || 36,
-                endKey = Ext.EventObject.END || 35,
-                enterKey = Ext.EventObject.ENTER || 13,
-                spaceKey = Ext.EventObject.SPACE || 32,
-                rows = getRows(),
-                targetEl = target && Ext.fly(target),
-                row = targetEl && (targetEl.is(view.itemSelector || '.x-grid-item')
-                         ? target : targetEl.up(view.itemSelector || '.x-grid-item', view.el, true)),
-                index = Ext.Array.indexOf(rows, row),
-                selectionModel,
-                record;
+                    downKey = Ext.event.Event.DOWN || 40,
+                    upKey = Ext.event.Event.UP || 38,
+                    homeKey = Ext.event.Event.HOME || 36,
+                    endKey = Ext.event.Event.END || 35,
+                    enterKey = Ext.event.Event.ENTER || 13,
+                    spaceKey = Ext.event.Event.SPACE || 32,
+                    rows = getRows(),
+                    targetEl = target && Ext.fly(target),
+                    row = targetEl && (targetEl.is(view.itemSelector || '.x-grid-item')
+                        ? target : targetEl.up(view.itemSelector || '.x-grid-item', view.el, true)),
+                    index = Ext.Array.indexOf(rows, row),
+                    selectionModel,
+                    record;
 
                 if (!rows.length) {
                     return true;
@@ -3160,62 +3467,32 @@ Ext.define('LeankorApp.view.MainViewportController', {
             view.on('itemadd', syncRows);
             view.on('itemupdate', syncRows);
             if (store && store.on) {
+                boundStore = store;
                 store.on('load', syncRows);
                 store.on('datachanged', syncRows);
             }
         };
 
-        bindCloseTool = function () {
-            if (!popup.el || !popup.el.dom) {
-                return;
-            }
-
-            popup.el.select('.x-tool-close, .x-tool-close .x-tool-tool-el, .x-tool-close .x-tool-img').each(function (toolEl) {
-                if (!toolEl || !toolEl.dom || toolEl.dom.leankorResourceGridCloseKeyBound) {
-                    return;
-                }
-
-                toolEl.dom.leankorResourceGridCloseKeyBound = true;
-                toolEl.dom.setAttribute('tabindex', '0');
-                toolEl.dom.setAttribute('role', 'button');
-                toolEl.on('keydown', function (event) {
-                    var key = event.getKey && event.getKey(),
-                    enterKey = Ext.EventObject.ENTER || 13,
-                    spaceKey = Ext.EventObject.SPACE || 32;
-
-                    if (key !== enterKey && key !== spaceKey) {
-                        return true;
-                    }
-
-                    event.stopEvent();
-                    if (popup.close) {
-                        popup.close();
-                    } else if (popup.hide) {
-                        popup.hide();
-                    }
-                    me.restoreResourceGridCloseFocus(popup.leankorResourceGridCloseFocusTarget);
-                    return false;
-                });
-            });
-        };
-
         popup.on({
             afterrender: function () {
-                bindCloseTool();
                 bindRows();
             },
             show: function () {
-                bindCloseTool();
                 bindRows();
             },
-            close: function () {
-                me.restoreResourceGridCloseFocus(popup.leankorResourceGridCloseFocusTarget);
+            destroy: function () {
+                // pagingStoreOwner is shared and outlives the popup; drop our listeners so
+                // stale syncRows closures don't fire against a destroyed grid on later loads.
+                if (boundStore && boundStore.un) {
+                    boundStore.un('load', syncRows);
+                    boundStore.un('datachanged', syncRows);
+                    boundStore = null;
+                }
             },
             scope: me
         });
 
         if (popup.rendered) {
-            bindCloseTool();
             bindRows();
         }
     },
@@ -3224,6 +3501,21 @@ Ext.define('LeankorApp.view.MainViewportController', {
         Ext.defer(function () {
             if (!focusTarget) {
                 return;
+            }
+
+            // A combo focusTarget (e.g. the "View"/departmentFilter combo) opted into
+            // the header keyboard pipeline expands its dropdown on Enter. The Enter that
+            // closed this popup is still down/repeating when focus lands back on the combo,
+            // so onHeaderComboSpecialKey would immediately re-open the combo's list. Set the
+            // leankorEnterSelecting guard it already checks so the close keystroke doesn't
+            // bleed into an expand, then clear it once the keystroke has settled.
+            if (focusTarget.isComponent && focusTarget.leankorHeaderViewCombo) {
+                focusTarget.leankorEnterSelecting = true;
+                Ext.defer(function () {
+                    if (!focusTarget.destroyed) {
+                        focusTarget.leankorEnterSelecting = false;
+                    }
+                }, 250);
             }
 
             if (focusTarget.isComponent && !focusTarget.destroyed && focusTarget.focus) {
@@ -3248,8 +3540,8 @@ Ext.define('LeankorApp.view.MainViewportController', {
         }
 
         const newHeight = Math.min(
-                editor._originalMaxHeight,
-                viewportHeight - buffer);
+            editor._originalMaxHeight,
+            viewportHeight - buffer);
 
         // Only update if meaningful change
         if (Math.abs(editor.height - newHeight) > 2) {

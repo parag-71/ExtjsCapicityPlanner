@@ -82,6 +82,10 @@ Ext.define('LeankorApp.view.ControlHeader', {
 				},
 				emptyText: Locale.LocaleName.View,
 				reference: 'departmentFilter',
+				// Opt this combo into the header keyboard-navigation pipeline
+				// (focus moves into the list on expand, Arrow/Tab/Enter/Esc
+				// handling). See bindHeaderComboKeys / onHeaderViewComboExpand.
+				leankorHeaderViewCombo: true,
 				tpl: Ext.create('Ext.XTemplate',
 					'<ul class="x-list-plain"><tpl for=".">',
 					'<li role="option" class="x-boundlist-item">{name}</li>',
@@ -126,6 +130,10 @@ Ext.define('LeankorApp.view.ControlHeader', {
 				},
 				emptyText : Locale.LocaleName.Show,
 				reference : 'viewChange',
+				// Opt into the header keyboard-navigation pipeline so the
+				// "Resource Scheduling" / "Resource Utilization" options are
+				// reachable and operable by keyboard. See onHeaderViewComboExpand.
+				leankorHeaderViewCombo: true,
 				// Template for the dropdown menu.
 				// Note the use of the "x-list-plain" and "x-boundlist-item" class,
 				// this is required to make the items selectable.
@@ -155,6 +163,7 @@ Ext.define('LeankorApp.view.ControlHeader', {
 				},
 				autoSelect: false,
 				reference: 'settingCheck',
+				leankorHeaderViewCombo: true,
 				// Template for the dropdown menu.
 				// Note the use of the "x-list-plain" and "x-boundlist-item" class,
 				// this is required to make the items selectable.
@@ -300,7 +309,7 @@ Ext.define('LeankorApp.view.ControlHeader', {
 	},
 
 	onInitialHeaderDocumentKeyDown: function (e, target) {
-		var tabKey = Ext.EventObject.TAB || 9,
+		var tabKey = Ext.event.Event.TAB || 9,
 			active = document.activeElement,
 			firstControl;
 
@@ -443,27 +452,32 @@ Ext.define('LeankorApp.view.ControlHeader', {
 		this.onHeaderControlKeyDown(e, target);
 	},
 
+	isHeaderKeyboardMode : function () {
+		var body = Ext.getBody();
+
+		return !!(body && body.hasCls("lk-keyboard-focus-mode"));
+	},
 	isKeyboardFocusKey : function (e) {
 		var key = e.getKey && e.getKey(),
 			modifierKeys = [
-				Ext.EventObject.SHIFT || 16,
-				Ext.EventObject.CTRL || 17,
-				Ext.EventObject.ALT || 18,
-				Ext.EventObject.CAPS_LOCK || 20,
-				Ext.EventObject.META || 91
+				Ext.event.Event.SHIFT || 16,
+				Ext.event.Event.CTRL || 17,
+				Ext.event.Event.ALT || 18,
+				Ext.event.Event.CAPS_LOCK || 20,
+				Ext.event.Event.META || 91
 			];
 
 		return !!(key && !Ext.Array.contains(modifierKeys, key));
 	},
 	isHeaderActivationKey : function (e) {
 		var key = e.getKey && e.getKey(),
-			spaceKey = Ext.EventObject.SPACE || 32;
+			spaceKey = Ext.event.Event.SPACE || 32;
 
 		return key === e.ENTER || key === spaceKey;
 	},
 
 	onHeaderControlKeyDown : function (e, target) {
-		var tabKey = Ext.EventObject.TAB || 9,
+		var tabKey = Ext.event.Event.TAB || 9,
 			lastControl;
 
 		if (e.getKey() !== tabKey || e.shiftKey) {
@@ -578,9 +592,23 @@ Ext.define('LeankorApp.view.ControlHeader', {
 
 			combo.leankorHeaderComboKeysBound = true;
 			LeankorApp.util.AccessibilityUtil.wireComboAria(combo);
+
+			// The Show / view combo (reference "viewChange") is wired exactly
+			// like resource-management (RM): wireComboAria for aria + Enter-to-
+			// expand, then NATIVE ExtJS combo behaviour for selection — the
+			// input keeps focus, the boundlist nav model highlights the option,
+			// and Enter fires the native "select" -> onViewChange, which opens
+			// Resource Schedule. The custom specialkey / expand-focus / list-
+			// keydown pipeline below is intentionally skipped for it: moving
+			// focus into the (re)loading list raced the store reload and kept
+			// Resource Schedule from opening. Other header combos are unchanged.
+			if (combo.reference === "viewChange") {
+				return;
+			}
+
 			combo.on("specialkey", this.onHeaderComboSpecialKey, this);
 			combo.on("collapse", this.onHeaderComboCollapse, this);
-			if (combo.reference === "departmentFilter") {
+			if (combo.leankorHeaderViewCombo) {
 				combo.on("expand", this.onHeaderViewComboExpand, this);
 			}
 
@@ -604,16 +632,57 @@ Ext.define('LeankorApp.view.ControlHeader', {
 		this.restoreHeaderControlFocus(combo);
 	},
 	onHeaderViewComboExpand: function (combo) {
-		var me = this;
+		var me = this,
+		picker;
+
+		// Only pull focus into the list for keyboard users. A mouse/touch open
+		// clears lk-keyboard-focus-mode (see onHeaderPointerDown), so we leave
+		// native combo behavior alone and never show a focus border on a mouse
+		// interaction.
+		if (!me.isHeaderKeyboardMode()) {
+			if (combo.reference === "settingCheck") {
+				Ext.defer(function () {
+					me.syncHeaderViewComboList(combo);
+				}, 1);
+			}
+			return;
+		}
+
+		if (combo.reference === "viewChange") {
+			// The Show combo rebuilds its store on every expand (the
+			// controller's onViewChangeBox does removeAll + load), which
+			// re-renders the list AFTER a plain deferred focus would have run —
+			// so focus would land on an empty/replaced list and be lost. Wait
+			// for the list's refresh before moving focus into it. A deferred
+			// fallback covers the case where the list was already re-rendered
+			// before we bound the refresh listener.
+			picker = combo.getPicker && combo.getPicker();
+			if (picker && picker.on) {
+				picker.on(
+					"refresh",
+					function () {
+						me.focusHeaderViewComboList(combo);
+					},
+					me,
+					{ single: true });
+			}
+			Ext.defer(function () {
+				me.focusHeaderViewComboList(combo);
+			}, 50);
+			return;
+		}
 
 		Ext.defer(function () {
 			me.focusHeaderViewComboList(combo);
 		}, 1);
 	},
 	syncHeaderViewComboList: function (combo) {
-		var picker = combo && combo.getPicker && combo.getPicker(),
+		var me = this,
+		picker = combo && combo.getPicker && combo.getPicker(),
 		listEl = picker && picker.el,
-		label = this.getHeaderControlLabel(combo);
+		label = this.getHeaderControlLabel(combo),
+		keyboardMode = this.isHeaderKeyboardMode(),
+		clearSettingPointerFocus;
 
 		if (!listEl || !listEl.dom) {
 			return;
@@ -629,7 +698,9 @@ Ext.define('LeankorApp.view.ControlHeader', {
 				record.get &&
 				record.get(combo.valueField || "value");
 
-			itemEl.dom.setAttribute("tabindex", "0");
+			itemEl.dom.setAttribute(
+				"tabindex",
+				combo.reference === "settingCheck" && !keyboardMode ? "-1" : "0");
 			itemEl.dom.setAttribute("role", "option");
 			itemEl.dom.setAttribute(
 				"aria-selected",
@@ -651,6 +722,16 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			listEl.on(
 				"focusin",
 				function (e, target) {
+					if (!me.isHeaderKeyboardMode()) {
+						Ext.fly(target).removeCls("x-boundlist-item-focused");
+						if (
+							combo.reference === "settingCheck" &&
+							target &&
+							target.blur) {
+							target.blur();
+						}
+						return;
+					}
 					Ext.fly(target).addCls("x-boundlist-item-focused");
 				},
 				this,
@@ -662,6 +743,68 @@ Ext.define('LeankorApp.view.ControlHeader', {
 				function (e, target) {
 					Ext.fly(target).removeCls("x-boundlist-item-focused");
 				},
+				this,
+				{
+					delegate: ".x-boundlist-item"
+				});
+		}
+
+		if (
+			combo.reference === "settingCheck" &&
+			!picker.leankorSettingListPointerFocusBound) {
+			picker.leankorSettingListPointerFocusBound = true;
+			clearSettingPointerFocus = function (e, target) {
+				if (Ext.getBody()) {
+					Ext.getBody().removeCls("lk-keyboard-focus-mode");
+				}
+				if (e && e.preventDefault) {
+					e.preventDefault();
+				}
+				if (target) {
+					target.setAttribute("tabindex", "-1");
+					if (target.blur) {
+						target.blur();
+					}
+				}
+				Ext.defer(function () {
+					listEl.select(".x-boundlist-item-focused").removeCls("x-boundlist-item-focused");
+					listEl.select(".x-boundlist-item-over").removeCls("x-boundlist-item-over");
+					listEl.select(".x-boundlist-item").each(function (itemEl) {
+						itemEl.dom.setAttribute("tabindex", "-1");
+					});
+				}, 1);
+			};
+			listEl.on(
+				"mousedown",
+				clearSettingPointerFocus,
+				this,
+				{
+					delegate: ".x-boundlist-item"
+				});
+			listEl.on(
+				"mouseover",
+				clearSettingPointerFocus,
+				this,
+				{
+					delegate: ".x-boundlist-item"
+				});
+			listEl.on(
+				"mousemove",
+				clearSettingPointerFocus,
+				this,
+				{
+					delegate: ".x-boundlist-item"
+				});
+			listEl.on(
+				"touchstart",
+				clearSettingPointerFocus,
+				this,
+				{
+					delegate: ".x-boundlist-item"
+				});
+			listEl.on(
+				"click",
+				clearSettingPointerFocus,
 				this,
 				{
 					delegate: ".x-boundlist-item"
@@ -682,42 +825,63 @@ Ext.define('LeankorApp.view.ControlHeader', {
 	},
 	onHeaderViewComboListKeyDown: function (combo, picker, e, target) {
 		var key = e.getKey && e.getKey(),
-		tabKey = Ext.EventObject.TAB || 9,
-		enterKey = Ext.EventObject.ENTER || 13,
-		spaceKey = Ext.EventObject.SPACE || 32,
+		tabKey = Ext.event.Event.TAB || 9,
+		enterKey = Ext.event.Event.ENTER || 13,
+		spaceKey = Ext.event.Event.SPACE || 32,
+		escKey = Ext.event.Event.ESC || 27,
+		upKey = Ext.event.Event.UP || 38,
+		downKey = Ext.event.Event.DOWN || 40,
+		homeKey = Ext.event.Event.HOME || 36,
+		endKey = Ext.event.Event.END || 35,
 		items = picker && picker.el && picker.el.select(".x-boundlist-item").elements,
+		count = (items || []).length,
 		index = Ext.Array.indexOf(items || [], target),
-		record,
-		controller;
+		focusItemAt = function (i) {
+			var el = items && items[i];
+			if (!el) {
+				return;
+			}
+			picker.el.select(".x-boundlist-item-focused").removeCls("x-boundlist-item-focused");
+			Ext.fly(el).addCls("x-boundlist-item-focused");
+			el.setAttribute("tabindex", "0");
+			el.focus();
+		};
 
 		if (key === enterKey || key === spaceKey) {
 			e.stopEvent();
-			record = picker.getRecord && picker.getRecord(target);
-			if (record) {
-				combo.setValue(record.get(combo.valueField || "value"));
-				if (combo.reference === "departmentFilter") {
-					combo.leankorSkipRestoreFocus = true;
-					controller =
-						(combo.lookupController && combo.lookupController()) ||
-						(this.up &&
-							this.up("mainviewport") &&
-							this.up("mainviewport").getController &&
-							this.up("mainviewport").getController()) ||
-						(Ext.ComponentQuery.query("mainviewport")[0] &&
-							Ext.ComponentQuery.query("mainviewport")[0].getController &&
-							Ext.ComponentQuery.query("mainviewport")[0].getController());
-					if (
-						controller &&
-						controller.onDepartmentFilter) {
-						controller.onDepartmentFilter(combo, [record]);
-					} else {
-						combo.fireEvent("select", combo, [record]);
-					}
-				} else {
-					combo.fireEvent("select", combo, [record]);
-				}
-			}
+			this.activateHeaderViewComboItem(combo, picker, target);
+			return;
+		}
+
+		if (key === escKey) {
+			// Close the list; onHeaderComboCollapse returns focus to the combo
+			// (the triggering control).
+			e.stopEvent();
 			combo.collapse();
+			return;
+		}
+
+		if (key === downKey) {
+			e.stopEvent();
+			focusItemAt(index < count - 1 ? index + 1 : 0);
+			return;
+		}
+
+		if (key === upKey) {
+			e.stopEvent();
+			focusItemAt(index > 0 ? index - 1 : count - 1);
+			return;
+		}
+
+		if (key === homeKey) {
+			e.stopEvent();
+			focusItemAt(0);
+			return;
+		}
+
+		if (key === endKey) {
+			e.stopEvent();
+			focusItemAt(count - 1);
 			return;
 		}
 
@@ -726,16 +890,84 @@ Ext.define('LeankorApp.view.ControlHeader', {
 		}
 
 		if (e.shiftKey && index <= 0) {
+			// Shift+Tab off the first option: close the list and move to the
+			// PREVIOUS header control (not back onto the same combo icon).
 			e.stopEvent();
 			combo.leankorSkipRestoreFocus = true;
 			combo.collapse();
-			this.restoreHeaderControlFocus(combo);
+			if (!this.focusPreviousHeaderControl(combo)) {
+				this.restoreHeaderControlFocus(combo);
+			}
 		} else if (!e.shiftKey && index === (items || []).length - 1) {
 			e.stopEvent();
 			combo.leankorSkipRestoreFocus = true;
 			combo.collapse();
 			this.focusNextHeaderControl(combo);
 		}
+	},
+	// Apply a list option: set the combo value, run the matching select flow,
+	// then collapse. Shared by the in-list keyboard handler
+	// (onHeaderViewComboListKeyDown) and the Enter-while-focus-on-combo handler
+	// (selectFocusedHeaderViewComboItem) so both paths behave identically.
+	activateHeaderViewComboItem: function (combo, picker, target) {
+		var record = picker && picker.getRecord && picker.getRecord(target),
+		controller;
+
+		if (record) {
+			combo.setValue(record.get(combo.valueField || "value"));
+			if (combo.reference === "departmentFilter") {
+				combo.leankorSkipRestoreFocus = true;
+				controller =
+					(combo.lookupController && combo.lookupController()) ||
+					(this.up &&
+						this.up("mainviewport") &&
+						this.up("mainviewport").getController &&
+						this.up("mainviewport").getController()) ||
+					(Ext.ComponentQuery.query("mainviewport")[0] &&
+						Ext.ComponentQuery.query("mainviewport")[0].getController &&
+						Ext.ComponentQuery.query("mainviewport")[0].getController());
+				if (
+					controller &&
+					controller.onDepartmentFilter) {
+					controller.onDepartmentFilter(combo, [record]);
+				} else {
+					combo.fireEvent("select", combo, [record]);
+				}
+			} else {
+				combo.fireEvent("select", combo, [record]);
+			}
+		}
+		combo.collapse();
+	},
+	// Enter pressed while the popup is open but DOM focus is still on the combo
+	// input (typically a mouse-opened popup). Pick the DOM-focused option, else
+	// the keyboard-focused (".x-boundlist-item-focused") option, else the first
+	// option, and activate it so Enter applies the selection instead of leaving
+	// focus stranded on the combo.
+	selectFocusedHeaderViewComboItem: function (combo) {
+		var picker = combo && combo.getPicker && combo.getPicker(),
+		listEl = picker && picker.el,
+		active = document.activeElement,
+		focusedEl,
+		firstEl,
+		target;
+
+		if (!listEl || !listEl.dom) {
+			combo.collapse();
+			return;
+		}
+
+		focusedEl = listEl.down(".x-boundlist-item-focused");
+		firstEl = listEl.down(".x-boundlist-item");
+		target =
+			(active &&
+				listEl.contains(active) &&
+				Ext.fly(active).is(".x-boundlist-item") &&
+				active) ||
+			(focusedEl && focusedEl.dom) ||
+			(firstEl && firstEl.dom);
+
+		this.activateHeaderViewComboItem(combo, picker, target);
 	},
 	focusHeaderViewComboList: function (combo) {
 		var me = this;
@@ -772,6 +1004,24 @@ Ext.define('LeankorApp.view.ControlHeader', {
 		}, 1);
 		return true;
 	},
+	focusPreviousHeaderControl: function (cmp) {
+		var controls = this.getFocusableHeaderControls(),
+		index = Ext.Array.indexOf(controls, cmp),
+		prev = index > 0 ? controls[index - 1] : null;
+
+		if (!prev) {
+			return false;
+		}
+
+		Ext.defer(function () {
+			if (prev.focus) {
+				prev.focus();
+			} else if (prev.el && prev.el.dom) {
+				prev.el.dom.focus();
+			}
+		}, 1);
+		return true;
+	},
 	restoreHeaderControlFocus: function (cmp) {
 		if (!cmp || cmp.destroyed || (cmp.isDisabled && cmp.isDisabled())) {
 			return;
@@ -789,12 +1039,19 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			}
 		}, 25);
 	},
+	closeHeaderComboAndFocusPrevious: function (combo) {
+		combo.leankorSkipRestoreFocus = true;
+		combo.collapse();
+		if (!this.focusPreviousHeaderControl(combo)) {
+			this.restoreHeaderControlFocus(combo);
+		}
+	},
 
 	onHeaderComboSpecialKey: function (combo, e, eOpts) {
-		var tabKey = Ext.EventObject.TAB || 9,
-		enterKey = Ext.EventObject.ENTER || 13,
-		escKey = Ext.EventObject.ESC || 27,
-		downKey = Ext.EventObject.DOWN || 40,
+		var tabKey = Ext.event.Event.TAB || 9,
+		enterKey = Ext.event.Event.ENTER || 13,
+		escKey = Ext.event.Event.ESC || 27,
+		downKey = Ext.event.Event.DOWN || 40,
 		key = e.getKey && e.getKey();
 
 		if (eOpts && eOpts.fromBoundList) {
@@ -804,14 +1061,22 @@ Ext.define('LeankorApp.view.ControlHeader', {
 		if (
 			key === downKey &&
 			!combo.isExpanded &&
-			combo.reference === "departmentFilter") {
+			combo.leankorHeaderViewCombo) {
 			e.stopEvent();
+			// Expanding fires "expand" -> onHeaderViewComboExpand, which moves
+			// focus into the list (and handles stores that rebuild on expand,
+			// e.g. viewChange).
 			combo.expand();
-			this.focusHeaderViewComboList(combo);
 		} else if (
 			key === tabKey &&
 			combo.isExpanded &&
-			combo.reference === "departmentFilter") {
+			e.shiftKey) {
+			e.stopEvent();
+			this.closeHeaderComboAndFocusPrevious(combo);
+		} else if (
+			key === tabKey &&
+			combo.isExpanded &&
+			combo.leankorHeaderViewCombo) {
 			e.stopEvent();
 			this.focusHeaderViewComboList(combo);
 		} else if (key === tabKey && combo.isExpanded) {
@@ -819,11 +1084,32 @@ Ext.define('LeankorApp.view.ControlHeader', {
 		} else if (key === escKey && combo.isExpanded) {
 			e.stopEvent();
 			combo.collapse();
+		} else if (
+			key === enterKey &&
+			combo.isExpanded &&
+			combo.reference === "viewChange") {
+			// Popup is open but DOM focus may still be on the combo input
+			// (e.g. the popup was opened with the mouse). ExtJS's native Enter
+			// finds no nav-model highlight here — we move focus into the list
+			// via the DOM, not the nav model — so it would dead-end with focus
+			// stuck on the combo. Activate the focused/first option ourselves.
+			e.stopEvent();
+			combo.leankorEnterSelecting = true;
+			Ext.defer(function () {
+				combo.leankorEnterSelecting = false;
+			}, 50);
+			this.selectFocusedHeaderViewComboItem(combo);
 		} else if (key === enterKey && combo.reference === "projectFilter") {
 			e.stopEvent();
 			combo.isExpanded = false;
 			combo.fireEvent("expand", combo);
 		} else if (key === enterKey && !combo.isExpanded) {
+			// This handler runs twice per keystroke (specialkey + el keydown).
+			// After the branch above selects and collapses, the second pass
+			// would see !isExpanded and re-open the popup — skip it.
+			if (combo.leankorEnterSelecting) {
+				return;
+			}
 			e.stopEvent();
 			combo.expand();
 		}

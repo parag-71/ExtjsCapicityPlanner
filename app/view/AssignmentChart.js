@@ -65,33 +65,5 @@ Ext.define('LeankorApp.view.AssignmentChart', {
             field   : 'amount',
             display : 'insideEnd'
         }
-    } ],
-
-    afterRender: function () {
-        var me = this,
-            baseLabel = ((typeof Locale !== 'undefined' && Locale.LocaleName && Locale.LocaleName.Allocation) || 'Allocation') +
-                ' ' +
-                ((typeof Locale !== 'undefined' && Locale.LocaleName && Locale.LocaleName.ResourceAvailability) || 'resource availability') +
-                ' chart';
-
-        me.callParent(arguments);
-
-        if (me.el && me.el.dom) {
-            me.el.dom.setAttribute('role', 'img');
-            if (!me.el.dom.getAttribute('aria-label')) {
-                me.el.dom.setAttribute('aria-label', baseLabel);
-            }
-        }
-    },
-
-    setAriaDescription: function (text) {
-        if (!text || !this.el || !this.el.dom) {
-            return;
-        }
-        var clean = String(text).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-        if (clean) {
-            this.el.dom.setAttribute('role', 'img');
-            this.el.dom.setAttribute('aria-label', clean);
-        }
-    }
+    } ]
 });

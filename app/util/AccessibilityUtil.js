@@ -23,7 +23,9 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 			[
 				"Ext.view.NavigationModel",
 				"Ext.grid.NavigationModel",
-				"Ext.tree.NavigationModel"
+				"Ext.tree.NavigationModel",
+				"Ext.view.BoundListKeyNav",
+				"Ext.dataview.NavigationModel"
 			],
 			function (name) {
 				var NM = Ext.ClassManager.get(name);
@@ -283,7 +285,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 			this.announce((localeName && localeName.PleaseWait) || "Loading");
 		} else {
 			dom.removeAttribute("aria-busy");
-			this.announce((localeName && localeName.A11yLoadingComplete) ||
+			this.announce((localeName && localeName.LoadingComplete) ||
 				"Loading complete");
 		}
 	},
@@ -500,8 +502,8 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		tool.leankorCloseKeysBound = true;
 		focusEl.on("keydown", function (e, target) {
 			var key = e.getKey && e.getKey(),
-				enterKey = Ext.EventObject.ENTER || 13,
-				spaceKey = Ext.EventObject.SPACE || 32;
+				enterKey = Ext.event.Event.ENTER || 13,
+				spaceKey = Ext.event.Event.SPACE || 32;
 
 			if (key !== enterKey && key !== spaceKey) {
 				return true;
@@ -560,7 +562,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 
 		cmp.leankorEscapeToCloseElBound = true;
 		cmp.el.on("keydown", function (e, target) {
-			var escKey = Ext.EventObject.ESC || 27,
+			var escKey = Ext.event.Event.ESC || 27,
 				key = e.getKey && e.getKey();
 
 			if (key !== escKey) {
@@ -796,7 +798,8 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 	},
 
 	insertSkipLink : function (mainPanel) {
-		var localeName = typeof Locale !== "undefined" && Locale.LocaleName,
+		var me = this,
+			localeName = typeof Locale !== "undefined" && Locale.LocaleName,
 			panelLabel = this.getPanelLabel && this.getPanelLabel(mainPanel),
 			link;
 
@@ -808,16 +811,48 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		link.href = "#";
 		link.className = "skip-link";
 		link.textContent =
-			(localeName && localeName.A11ySkipToMain) || "Skip to main content";
+			(localeName && localeName.SkipToMain) || "Skip to main content";
 		link.setAttribute("data-cp-skip", "true");
 		link.addEventListener("click", function (e) {
 			var dom;
 
 			e.preventDefault();
-			if (!mainPanel || !mainPanel.body || !mainPanel.body.dom) {
+			if (!mainPanel) {
 				return;
 			}
 
+			// Land focus directly on the first row of the upper grid section
+			// (mirrors resource-management's skip link, which jumps to the first
+			// grid row). In the empty-board state there is no row, so land on the
+			// region and route the next forward Tab to the grid add button.
+			me.setKeyboardFocusMode(true);
+			if (me.focusFirstGridRow(mainPanel)) {
+				return;
+			}
+
+			if (me.getHeaderAddButton(mainPanel)) {
+				if (mainPanel.body && mainPanel.body.dom) {
+					dom = mainPanel.body.dom;
+					if (!dom.hasAttribute("tabindex")) {
+						dom.setAttribute("tabindex", "-1");
+					}
+					dom.setAttribute("role", "region");
+					if (panelLabel) {
+						dom.setAttribute("aria-label", panelLabel);
+					}
+					dom.focus();
+				}
+				me.armEmptyBoardSkipHandoff(mainPanel, dom || document.body);
+				return;
+			}
+
+			if (me.focusFirstTimelineItem(mainPanel)) {
+				return;
+			}
+
+			if (!mainPanel.body || !mainPanel.body.dom) {
+				return;
+			}
 			dom = mainPanel.body.dom;
 			if (!dom.hasAttribute("tabindex")) {
 				dom.setAttribute("tabindex", "-1");
@@ -827,8 +862,64 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				dom.setAttribute("aria-label", panelLabel);
 			}
 			dom.focus();
+			me.armEmptyBoardSkipHandoff(mainPanel, dom);
 		});
 		document.body.insertBefore(link, document.body.firstChild);
+	},
+
+	armEmptyBoardSkipHandoff : function (panel, focusDom) {
+		var me = this,
+			dom = focusDom && (focusDom.dom || focusDom),
+			tabKey = Ext.event.Event.TAB || 9,
+			cleanup,
+			onKeyDown,
+			onFocusOut;
+
+		if (!panel || !dom || !dom.addEventListener) {
+			return;
+		}
+
+		if (dom.leankorEmptySkipHandoffCleanup) {
+			dom.leankorEmptySkipHandoffCleanup();
+		}
+
+		cleanup = function () {
+			dom.removeEventListener("keydown", onKeyDown, true);
+			dom.removeEventListener("focusout", onFocusOut, true);
+			delete dom.leankorEmptySkipHandoffCleanup;
+		};
+		onKeyDown = function (event) {
+			var key = event.keyCode || event.which;
+
+			if (key !== tabKey) {
+				return;
+			}
+
+			cleanup();
+			if (event.shiftKey) {
+				return;
+			}
+
+			if (me.focusFirstGridRow(panel) ||
+				me.focusFirstTimelineItem(panel) ||
+				me.focusHeaderAddButton(panel)) {
+				event.preventDefault();
+				event.stopPropagation();
+			}
+		};
+		onFocusOut = function () {
+			Ext.defer(function () {
+				var active = document.activeElement;
+
+				if (active !== dom && !(dom.contains && dom.contains(active))) {
+					cleanup();
+				}
+			}, 1);
+		};
+
+		dom.leankorEmptySkipHandoffCleanup = cleanup;
+		dom.addEventListener("keydown", onKeyDown, true);
+		dom.addEventListener("focusout", onFocusOut, true);
 	},
 
 	initPopupKeyboardNav : function (popup, opener, opts) {
@@ -894,10 +985,10 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 			if (!node.hasAttribute("tabindex")) {
 				node.setAttribute("tabindex", "0");
 			}
+			// Focus the first row as the keyboard entry point, but do NOT select
+			// it — selection is explicit (Space/Enter) so the multiselect popup
+			// does not open with an unintended row already in the filter.
 			node.focus();
-			if (sm) {
-				sm.select(firstRec);
-			}
 			return true;
 		};
 
@@ -965,6 +1056,14 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 					if (!openerTarget) {
 						return;
 					}
+					if (openerTarget.isComponent && openerTarget.leankorHeaderViewCombo) {
+						openerTarget.leankorEnterSelecting = true;
+						Ext.defer(function () {
+							if (!openerTarget.destroyed) {
+								openerTarget.leankorEnterSelecting = false;
+							}
+						}, 250);
+					}
 					if (openerTarget.isComponent) {
 						if (!openerTarget.destroyed && Ext.isFunction(openerTarget.focus)) {
 							openerTarget.focus();
@@ -981,6 +1080,43 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				return;
 			}
 
+			var focusActiveViewRow = function (view) {
+				var selectionModel = popup.getSelectionModel && popup.getSelectionModel(),
+					selection = selectionModel && selectionModel.getSelection && selectionModel.getSelection(),
+					record = selection && selection[0],
+					node,
+					store;
+
+				if (!view || !view.el || !view.el.dom) {
+					return false;
+				}
+
+				if (!record) {
+					node = view.el.down(".lk-popup-row-focused", true) ||
+						view.el.down(".x-grid-item[tabindex='0']", true);
+					record = node && view.getRecord && view.getRecord(node);
+				}
+
+				if (!record) {
+					store = view.getStore && view.getStore();
+					record = store && store.getCount && store.getCount() ? store.getAt(0) : null;
+				}
+
+				node = record && view.getNode && view.getNode(record);
+				if (!node) {
+					return false;
+				}
+
+				if (selectionModel && record) {
+					selectionModel.select(record);
+				}
+				view.el.select(".lk-popup-row-focused").removeCls("lk-popup-row-focused");
+				Ext.fly(node).addCls("lk-popup-row-focused");
+				node.setAttribute("tabindex", "0");
+				node.focus();
+				return true;
+			};
+
 			popup.el.dom._popupTabTrapBound = true;
 			popup.el.dom.addEventListener("keydown", function (e) {
 				var focusables,
@@ -996,6 +1132,10 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 
 				if (e.keyCode !== 9) {
 					return;
+				}
+
+				if (Ext.getBody()) {
+					Ext.getBody().addCls("lk-keyboard-focus-mode");
 				}
 
 				if (opts.tabNavigatesRows) {
@@ -1056,6 +1196,12 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				e.preventDefault();
 				e.stopPropagation();
 				focusables[next].focus();
+				view = Ext.isFunction(popup.getView) ? popup.getView() : null;
+				if (view && view.el && focusables[next] === view.el.dom) {
+					Ext.defer(function () {
+						focusActiveViewRow(view);
+					}, 1);
+				}
 			}, true);
 		};
 
@@ -1085,11 +1231,23 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 			}
 
 			var getRecord = function () {
-				var selectionModel = popup.getSelectionModel && popup.getSelectionModel(),
-					selection = selectionModel && selectionModel.getSelection && selectionModel.getSelection(),
-					rec = selection && selection[0],
+				var selectionModel,
+					selection,
+					rec,
 					popupView,
 					store;
+
+				// Deferred selectionchange/announce callbacks can run after the popup has
+				// closed (close -> store.removeAll -> selectionchange). Once the popup is
+				// destroyed its selection model is torn down and getSelection() throws on a
+				// null internal collection, so bail out before touching it.
+				if (popup.destroyed) {
+					return null;
+				}
+
+				selectionModel = popup.getSelectionModel && popup.getSelectionModel();
+				selection = selectionModel && selectionModel.getSelection && selectionModel.getSelection();
+				rec = selection && selection[0];
 
 				if (rec) {
 					return rec;
@@ -1226,15 +1384,73 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 					return;
 				}
 
-				var resolveRec = function () {
-						var sm = treePanel.getSelectionModel && treePanel.getSelectionModel(),
-							rec = sm && sm.getSelection && sm.getSelection()[0],
-							el;
-
-						if (rec) {
-							return rec;
+				var focusRowEl = function (rowEl) {
+						if (!rowEl) {
+							return;
 						}
 
+						view.el.select(".lk-popup-row-focused").removeCls("lk-popup-row-focused");
+						Ext.fly(rowEl).addCls("lk-popup-row-focused");
+						if (!rowEl.hasAttribute("tabindex")) {
+							rowEl.setAttribute("tabindex", "0");
+						}
+					},
+					focusRowForRecord = function (record) {
+						var node = record && view.getNode && view.getNode(record);
+
+						if (!node) {
+							return false;
+						}
+
+						focusRowEl(node);
+						return true;
+					},
+					syncFocusedRow = function () {
+						var sm = treePanel.getSelectionModel && treePanel.getSelectionModel(),
+							active = document.activeElement,
+							marked,
+							record;
+
+						// Selection fully cleared (e.g. the Reset button) — drop the
+						// multi-select tracking so stale pins don't keep rows "stuck".
+						if (sm && sm.getSelection && sm.getSelection().length === 0) {
+							treePanel.leankorPinned = {};
+							treePanel.leankorNavRec = null;
+						}
+
+						// Keep focus on the row the user is on. Snapping to the first
+						// selected record (as a single-select list would) fights
+						// multi-select: every Space toggle fires selectionchange and
+						// would yank focus back to the top of the tree.
+						while (active && active !== view.el.dom) {
+							if (Ext.fly(active).hasCls("x-grid-item")) {
+								focusRowEl(active);
+								return;
+							}
+							active = active.parentNode;
+						}
+
+						marked = view.el.down && view.el.down(".lk-popup-row-focused", true);
+						if (marked) {
+							focusRowEl(marked);
+							return;
+						}
+
+						// Fall back to the selection only when nothing is focused
+						// (e.g. restoring focus after a folder expand re-renders rows).
+						record = sm && sm.getSelection && sm.getSelection()[0];
+						if (record) {
+							focusRowForRecord(record);
+						}
+					},
+					resolveRec = function () {
+						var sm = treePanel.getSelectionModel && treePanel.getSelectionModel(),
+							rec,
+							el;
+
+						// Prefer the row that currently has DOM focus. With multi-select
+						// the selection can hold several rows, so its first entry is not
+						// necessarily the row the user is navigating to act on.
 						el = document.activeElement;
 						while (el && el !== view.el.dom) {
 							rec = view.getRecord && view.getRecord(el);
@@ -1243,32 +1459,13 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 							}
 							el = el.parentNode;
 						}
-						return null;
-					},
-					focusRecord = function (record, delay) {
-						Ext.defer(function () {
-							var node = view.getNode && view.getNode(record),
-								sm = treePanel.getSelectionModel && treePanel.getSelectionModel();
 
-							if (!node || treePanel.destroyed || treePanel.isDestroyed) {
-								return;
-							}
-							if (sm) {
-								sm.select(record);
-							}
-							view.el.select(".lk-popup-row-focused").removeCls("lk-popup-row-focused");
-							Ext.fly(node).addCls("lk-popup-row-focused");
-							if (!node.hasAttribute("tabindex")) {
-								node.setAttribute("tabindex", "0");
-							}
-							node.focus();
-						}, delay || 30);
+						return (sm && sm.getSelection && sm.getSelection()[0]) || null;
 					},
 					navigateSibling = function (currentRec, direction) {
 						var node = view.getNode && view.getNode(currentRec),
 							sibling,
-							siblingRec,
-							sm;
+							siblingRec;
 
 						if (!node) {
 							return;
@@ -1286,24 +1483,40 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 							return;
 						}
 
-						sm = treePanel.getSelectionModel && treePanel.getSelectionModel();
-						if (sm) {
-							sm.select(siblingRec);
-						}
-						view.el.select(".lk-popup-row-focused").removeCls("lk-popup-row-focused");
-						Ext.fly(sibling).addCls("lk-popup-row-focused");
-						if (!sibling.hasAttribute("tabindex")) {
-							sibling.setAttribute("tabindex", "0");
-						}
+						// Move focus only; selection is toggled explicitly with Space/
+						// Enter, so navigating never changes the multi-selection.
+						focusRowEl(sibling);
 						sibling.focus();
 					};
 
-				treePanel.on("itemexpand", focusRecord);
-				treePanel.on("itemcollapse", focusRecord);
-				treePanel.on("beforedestroy", function () {
-					treePanel.un("itemexpand", focusRecord);
-					treePanel.un("itemcollapse", focusRecord);
-				});
+				view.el.dom.addEventListener("focus", function (e) {
+					var row = e.target;
+
+					while (row && row !== view.el.dom && !Ext.fly(row).hasCls("x-grid-item")) {
+						row = row.parentNode;
+					}
+					if (row && row !== view.el.dom) {
+						focusRowEl(row);
+					}
+				}, true);
+
+				view.el.dom.addEventListener("mousedown", function (e) {
+					var row = e.target;
+
+					while (row && row !== view.el.dom && !Ext.fly(row).hasCls("x-grid-item")) {
+						row = row.parentNode;
+					}
+					if (row && row !== view.el.dom) {
+						focusRowEl(row);
+					}
+				}, true);
+
+				var smRuntime = treePanel.getSelectionModel && treePanel.getSelectionModel();
+				if (smRuntime && smRuntime.on) {
+					smRuntime.on("selectionchange", syncFocusedRow);
+				}
+				treePanel.on("itemexpand", syncFocusedRow);
+				treePanel.on("itemcollapse", syncFocusedRow);
 
 				view.el.dom.addEventListener("keydown", function (e) {
 					var key = e.keyCode,
@@ -1311,24 +1524,78 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 						isLeaf,
 						isExpanded;
 
-					if (key === 13 && (Ext.isFunction(opts.onActivate) || opts.enterTogglesFolder)) {
+					if (Ext.getBody()) {
+						Ext.getBody().addCls("lk-keyboard-focus-mode");
+					}
+
+					if (key === 13) {
+						// Always handle + stop Enter so it never reaches the framework
+						// navigation model onKeyEnter, which reads record.data and throws
+						// when our custom keyboard handling left no navigation position.
 						e.preventDefault();
 						e.stopPropagation();
 						if (e.stopImmediatePropagation) {
 							e.stopImmediatePropagation();
 						}
-						if (Ext.isFunction(opts.onActivate) && rec) {
-							opts.onActivate(rec);
+						if (!rec) {
+							return;
 						}
-						if (opts.enterTogglesFolder && rec) {
-							isLeaf = Ext.isFunction(rec.isLeaf) ? rec.isLeaf() : true;
-							isExpanded = Ext.isFunction(rec.isExpanded) ? rec.isExpanded() : false;
-							if (!isLeaf) {
+						if (Ext.isFunction(opts.onActivate)) {
+							opts.onActivate(rec);
+							return;
+						}
+						isLeaf = Ext.isFunction(rec.isLeaf) ? rec.isLeaf() : true;
+						if (!isLeaf) {
+							if (opts.enterTogglesFolder) {
+								isExpanded = Ext.isFunction(rec.isExpanded) ? rec.isExpanded() : false;
 								if (isExpanded) {
 									rec.collapse();
 								} else {
 									expand(rec);
 								}
+							}
+							return;
+						}
+						// Leaf node: toggle selection (select if not selected, deselect
+						// if already selected). Enter mirrors Space here.
+						var smEnter = treePanel.getSelectionModel && treePanel.getSelectionModel();
+						if (smEnter) {
+							if (smEnter.isSelected(rec)) {
+								smEnter.deselect(rec);
+							} else {
+								smEnter.select(rec, true);
+							}
+						}
+						return;
+					}
+
+					if (key === 32) {
+						e.preventDefault();
+						e.stopPropagation();
+						if (e.stopImmediatePropagation) {
+							e.stopImmediatePropagation();
+						}
+						if (!rec) {
+							return;
+						}
+						isLeaf = Ext.isFunction(rec.isLeaf) ? rec.isLeaf() : true;
+						if (!isLeaf) {
+							if (opts.enterTogglesFolder) {
+								isExpanded = Ext.isFunction(rec.isExpanded) ? rec.isExpanded() : false;
+								if (isExpanded) {
+									rec.collapse();
+								} else {
+									expand(rec);
+								}
+							}
+							return;
+						}
+						var sm = treePanel.getSelectionModel && treePanel.getSelectionModel();
+						if (sm) {
+							if (sm.isSelected(rec)) {
+								sm.deselect(rec);
+							} else {
+								sm.select(rec, true);
 							}
 						}
 						return;
@@ -1338,28 +1605,36 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 						return;
 					}
 
+					// Up / Down move between visible tree nodes (siblings).
 					if (key === 38 || key === 40) {
 						e.preventDefault();
 						e.stopPropagation();
+						if (e.stopImmediatePropagation) {
+							e.stopImmediatePropagation();
+						}
 						navigateSibling(rec, key === 40 ? "next" : "prev");
 						return;
 					}
 
-					isLeaf = Ext.isFunction(rec.isLeaf) ? rec.isLeaf() : true;
-					isExpanded = Ext.isFunction(rec.isExpanded) ? rec.isExpanded() : false;
-
-					if (key === 37 || key === 39) {
+					// Right / Left expand / collapse folder nodes (resource-
+					// management behaviour): leaves are a no-op; Right expands a
+					// collapsed folder, Left collapses an expanded folder. No
+					// move-into-child / move-to-parent.
+					if (key === 39 || key === 37) {
 						e.preventDefault();
 						e.stopPropagation();
+						if (e.stopImmediatePropagation) {
+							e.stopImmediatePropagation();
+						}
+						isLeaf = Ext.isFunction(rec.isLeaf) ? rec.isLeaf() : true;
 						if (isLeaf) {
 							return;
 						}
+						isExpanded = Ext.isFunction(rec.isExpanded) ? rec.isExpanded() : false;
 						if (key === 39 && !isExpanded) {
 							expand(rec);
 						} else if (key === 37 && isExpanded) {
 							rec.collapse();
-						} else {
-							focusRecord(rec);
 						}
 						return;
 					}
@@ -1596,7 +1871,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
     onHeaderPopupDocumentKeyDown: function (e, target) {
         var me = this,
         popup = me.getActiveHeaderPopupTrap(),
-        tabKey = Ext.EventObject.TAB || 9,
+        tabKey = Ext.event.Event.TAB || 9,
         key = e.getKey && e.getKey();
 
         if (!popup || key !== tabKey) {
@@ -1840,8 +2115,8 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
         focusEl.dom.leankorCloseToolElementKeysBound = true;
         focusEl.on('keydown', function (e) {
             var key = e.getKey && e.getKey(),
-            enterKey = Ext.EventObject.ENTER || 13,
-            spaceKey = Ext.EventObject.SPACE || 32;
+            enterKey = Ext.event.Event.ENTER || 13,
+            spaceKey = Ext.event.Event.SPACE || 32;
 
             if (key !== enterKey && key !== spaceKey) {
                 return true;
@@ -1865,8 +2140,8 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
         popup.leankorCloseToolDomKeysBound = true;
         popup.el.on('keydown', function (e, target) {
             var key = e.getKey && e.getKey(),
-            enterKey = e.ENTER || Ext.EventObject.ENTER || 13,
-            spaceKey = e.SPACE || Ext.EventObject.SPACE || 32,
+            enterKey = e.ENTER || Ext.event.Event.ENTER || 13,
+            spaceKey = e.SPACE || Ext.event.Event.SPACE || 32,
             targetEl = target && Ext.fly(target),
             markedCloseTool =
                 targetEl &&
@@ -1964,10 +2239,10 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
     onHeaderPopupKeyDown: function (popup, config, e, target) {
         var key = e.getKey(),
         button,
-        spaceKey = e.SPACE || Ext.EventObject.SPACE || 32,
+        spaceKey = e.SPACE || Ext.event.Event.SPACE || 32,
         record;
 
-        if (key === (Ext.EventObject.TAB || 9) && config.trapFocus !== false) {
+        if (key === (Ext.event.Event.TAB || 9) && config.trapFocus !== false) {
             e.stopEvent();
             if (!this.focusHeaderPopupAdjacentElement(popup, target, e.shiftKey)) {
                 this.focusHeaderPopupEdge(popup, e.shiftKey);
@@ -1982,7 +2257,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
         }
 
         if (
-            key === (Ext.EventObject.TAB || 9) &&
+            key === (Ext.event.Event.TAB || 9) &&
             config.activateRows &&
             this.isHeaderPopupRowTarget(popup, target)) {
             if (this.focusHeaderPopupAdjacentElement(popup, target, e.shiftKey)) {
@@ -1992,7 +2267,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
         }
 
         if (
-            key === (Ext.EventObject.TAB || 9) &&
+            key === (Ext.event.Event.TAB || 9) &&
             !e.shiftKey &&
             this.isHeaderPopupPrimaryButtonTarget(popup, config, target)) {
             if (this.focusHeaderPopupAdjacentElement(popup, target, false)) {
@@ -2002,7 +2277,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
         }
 
         if (
-            key === (Ext.EventObject.TAB || 9) &&
+            key === (Ext.event.Event.TAB || 9) &&
             e.shiftKey &&
             this.isHeaderPopupCloseTool(target, popup)) {
             if (this.focusHeaderPopupAdjacentElement(popup, target, true)) {
@@ -2013,7 +2288,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 
         if (
             config.skipEmptyRowsOnTab &&
-            key === (Ext.EventObject.TAB || 9) &&
+            key === (Ext.event.Event.TAB || 9) &&
             !this.hasHeaderPopupRows(popup)) {
             if (!e.shiftKey && this.isHeaderPopupTextInput(target)) {
                 button = this.getHeaderPopupPrimaryButton(popup, config);
@@ -2148,10 +2423,10 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
     },
     handleHeaderPopupArrowNavigation: function (popup, config, e, target) {
         var key = e.getKey && e.getKey(),
-        upKey = Ext.EventObject.UP || 38,
-        downKey = Ext.EventObject.DOWN || 40,
-        leftKey = Ext.EventObject.LEFT || 37,
-        rightKey = Ext.EventObject.RIGHT || 39,
+        upKey = Ext.event.Event.UP || 38,
+        downKey = Ext.event.Event.DOWN || 40,
+        leftKey = Ext.event.Event.LEFT || 37,
+        rightKey = Ext.event.Event.RIGHT || 39,
         view = popup && popup.getView && popup.getView(),
         record;
 
@@ -2180,28 +2455,22 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
             return false;
         }
 
-        if (key === rightKey && record.isLeaf && !record.isLeaf()) {
+        // Right / Left expand / collapse folder nodes (resource-management
+        // behaviour): leaves are a no-op; Right expands a collapsed folder,
+        // Left collapses an expanded folder. No move-into-child / parent.
+        if (record.isLeaf && record.isLeaf()) {
+            return false;
+        }
+        if (key === rightKey && record.expand &&
+            !(record.isExpanded && record.isExpanded())) {
             e.stopEvent();
-            if (!(record.isExpanded && record.isExpanded())) {
-                this.toggleHeaderPopupTreeRecord(popup, record);
-            }
+            record.expand();
             return true;
         }
-
-        if (key === leftKey) {
+        if (key === leftKey && record.collapse &&
+            record.isExpanded && record.isExpanded()) {
             e.stopEvent();
-            if (
-                record.isLeaf &&
-                !record.isLeaf() &&
-                record.isExpanded &&
-                record.isExpanded()) {
-                record.collapse();
-                this.syncResourceTypePopupAccessibility(
-                    popup,
-                    popup.leankorResourceTypeAccessibilityConfig || config || {});
-            } else {
-                this.focusHeaderPopupParentRow(popup, record);
-            }
+            record.collapse();
             return true;
         }
 
@@ -2599,6 +2868,21 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
                     !document.documentElement.contains(focusTarget)) ||
                 (focusTarget.isDisabled && focusTarget.isDisabled())) {
                 return;
+            }
+
+            // A combo focusTarget (e.g. the "View"/departmentFilter combo) opted into the
+            // header keyboard pipeline expands its dropdown on Enter. The Enter that closed
+            // this popup is still down/repeating when focus lands back on the combo, so
+            // onHeaderComboSpecialKey would immediately re-open its list. Set the
+            // leankorEnterSelecting guard it already checks so the close keystroke doesn't
+            // bleed into an expand, then clear it once the keystroke has settled.
+            if (focusTarget.isComponent && focusTarget.leankorHeaderViewCombo) {
+                focusTarget.leankorEnterSelecting = true;
+                Ext.defer(function () {
+                    if (!focusTarget.destroyed) {
+                        focusTarget.leankorEnterSelecting = false;
+                    }
+                }, 250);
             }
 
             if (focusTarget.focus) {
@@ -3111,8 +3395,8 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
             el.dom.leankorPopupButtonKeyHandlerBound = true;
             el.on('keydown', function (e) {
                 var key = e.getKey && e.getKey(),
-                enterKey = Ext.EventObject.ENTER || 13,
-                spaceKey = Ext.EventObject.SPACE || 32;
+                enterKey = Ext.event.Event.ENTER || 13,
+                spaceKey = Ext.event.Event.SPACE || 32;
 
                 if (key !== enterKey && key !== spaceKey) {
                     return true;
@@ -3231,7 +3515,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
         tool.leankorPopupToolKeysBound = true;
         el.on('keydown', function (e) {
             var key = e.getKey && e.getKey(),
-            spaceKey = e.SPACE || Ext.EventObject.SPACE || 32;
+            spaceKey = e.SPACE || Ext.event.Event.SPACE || 32;
 
             if (key !== e.ENTER && key !== spaceKey) {
                 return true;
@@ -3392,12 +3676,19 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 					return;
 				}
 
-				dom.setAttribute("tabindex", "0");
+				// The grid view must NOT be a tab stop. If it is focusable the
+				// whole grid receives the keyboard focus ring (.x-grid-view:focus)
+				// instead of an individual row. Keyboard entry into the grid is
+				// handled by focusFirstGridRow (which focuses a row), and the
+				// keydown listener below is bound in the capture phase so it still
+				// receives arrow keys while a row (a descendant) holds focus.
+				dom.setAttribute("tabindex", "-1");
 
 				var gotoRow = function (idx) {
 					var store = view.getStore && view.getStore(),
 						total = store && store.getCount && store.getCount(),
 						rec,
+						node,
 						selectionModel;
 
 					if (!store || !total) {
@@ -3414,7 +3705,14 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 					if (selectionModel) {
 						selectionModel.select(rec);
 					}
-					if (Ext.isFunction(view.focusRow)) {
+					// Move focus to the row element itself so the focus ring shows
+					// on the row (via the lk-board-row-focused class), not on the
+					// whole grid. Fall back to Ext's focusRow only if the row node
+					// can't be resolved.
+					node = view.getNode && view.getNode(rec);
+					if (node) {
+						me.focusGridRow(node);
+					} else if (Ext.isFunction(view.focusRow)) {
 						try {
 							view.focusRow(rec);
 						} catch (ignore) {}
@@ -3427,15 +3725,15 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 
 				dom.addEventListener("keydown", function (e) {
 					var key = e.keyCode || e.which,
-						upKey = Ext.EventObject.UP || 38,
-						downKey = Ext.EventObject.DOWN || 40,
-						leftKey = Ext.EventObject.LEFT || 37,
-						rightKey = Ext.EventObject.RIGHT || 39,
-						enterKey = Ext.EventObject.ENTER || 13,
-						escKey = Ext.EventObject.ESC || 27,
-						homeKey = Ext.EventObject.HOME || 36,
-						endKey = Ext.EventObject.END || 35,
-						spaceKey = Ext.EventObject.SPACE || 32,
+						upKey = Ext.event.Event.UP || 38,
+						downKey = Ext.event.Event.DOWN || 40,
+						leftKey = Ext.event.Event.LEFT || 37,
+						rightKey = Ext.event.Event.RIGHT || 39,
+						enterKey = Ext.event.Event.ENTER || 13,
+						escKey = Ext.event.Event.ESC || 27,
+						homeKey = Ext.event.Event.HOME || 36,
+						endKey = Ext.event.Event.END || 35,
+						spaceKey = Ext.event.Event.SPACE || 32,
 						store,
 						selectionModel,
 						record,
@@ -3463,9 +3761,16 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 					}
 
 					selectionModel = grid.getSelectionModel && grid.getSelectionModel();
-					record = selectionModel && selectionModel.getSelection && selectionModel.getSelection()[0];
-					rowIdx = record ? store.indexOf(record) : 0;
 					total = store.getCount();
+
+					// Track the CURRENTLY FOCUSED row (rows are focused via
+					// focusGridRow), not the selection. Tab-entry focuses a row
+					// without selecting it, so reading the selection makes the
+					// arrow keys start from the wrong (or no) position and appear
+					// dead.
+					record = me.getFocusedGridRecord(view) ||
+						(selectionModel && selectionModel.getSelection && selectionModel.getSelection()[0]);
+					rowIdx = record ? store.indexOf(record) : -1;
 					isTreeRecord = record && Ext.isFunction(record.isLeaf);
 
 					if (key === downKey) {
@@ -3485,16 +3790,26 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 						e.stopPropagation();
 						gotoRow(total - 1);
 					} else if (key === rightKey) {
-						if (isTreeRecord && !record.isLeaf() && !record.isExpanded()) {
+						// Treegrid RIGHT (resource-management behaviour): expand a
+						// collapsed folder only — no move-into-child. Leaf rows and
+						// already-expanded folders are left as-is. Use the guarded
+						// expanded-check (isGridRecordExpanded) so a record whose
+						// isExpanded() is missing/throws can't kill the key, and
+						// always consume the key on an expandable folder so the
+						// Scheduler's own Left/Right cell/scroll handling can't run.
+						if (me.isExpandableGridRecord(record)) {
 							e.preventDefault();
 							e.stopPropagation();
-							record.expand();
+							me.toggleGridFolder(view, record, true);
 						}
 					} else if (key === leftKey) {
-						if (isTreeRecord && !record.isLeaf() && record.isExpanded()) {
+						// Treegrid LEFT (ARIA tree pattern):
+						//   expanded folder -> collapse it
+						//   otherwise       -> move to the parent folder
+						if (me.isExpandableGridRecord(record) && me.isGridRecordExpanded(record)) {
 							e.preventDefault();
 							e.stopPropagation();
-							record.collapse();
+							me.toggleGridFolder(view, record, false);
 						} else if (
 							isTreeRecord &&
 							record.parentNode &&
@@ -3508,14 +3823,58 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 							}
 						}
 					} else if (key === enterKey || key === spaceKey) {
-						if (Ext.isFunction(opts.onActivate) && record) {
+						// Enter/Space SELECTS the focused row — it never expands or
+						// collapses a folder (that is Left/Right only). The row is
+						// already selected during arrow navigation; re-assert the
+						// selection and defer to the panel's activate handler when
+						// one is wired.
+						if (record) {
 							e.preventDefault();
 							e.stopPropagation();
-							opts.onActivate(record, e);
+							if (selectionModel) {
+								selectionModel.select(record);
+							}
+							if (Ext.isFunction(opts.onActivate)) {
+								opts.onActivate(record, e);
+							}
 						}
 					} else if (key === escKey) {
 						me.restoreFocus();
 					}
+				}, true);
+
+				// Paint the keyboard focus ring when a row receives focus
+				// directly (e.g. Tab lands on the roving-anchor row of a grid
+				// that has no header "+" entry, like Resource Schedule). The
+				// board CSS suppresses the native :focus ring and shows it via
+				// the lk-board-row-focused class instead, which arrow nav adds
+				// through focusGridRow — but a plain Tab-in never calls that, so
+				// the row would focus invisibly. Only act in keyboard mode so a
+				// mouse click never paints the ring.
+				dom.addEventListener("focusin", function (e) {
+					var rowEl;
+
+					if (!me.keyboardFocusActive) {
+						return;
+					}
+					// Don't paint the row when focus is on a scheduler event bar
+					// (or utilization interval) inside a timeline row: the event
+					// itself carries the focus ring (lk-board-event-focused), so
+					// painting its containing row would outline the WHOLE row
+					// instead of just the event.
+					if (e.target && e.target.closest &&
+						(e.target.closest(".sch-event") ||
+							e.target.closest(".gnt-resource-utilization-interval"))) {
+						return;
+					}
+					rowEl = e.target && e.target.closest &&
+						e.target.closest(".x-grid-item");
+					if (!rowEl || !dom.contains(rowEl) ||
+						Ext.fly(rowEl).hasCls(me.rowFocusCls)) {
+						return;
+					}
+					me.clearFocusedRows();
+					Ext.fly(rowEl).addCls(me.rowFocusCls);
 				}, true);
 			};
 
@@ -3629,6 +3988,11 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				}
 
 				dom.leankorSplitterKeyboardBound = true;
+				// Tell ExtJS this splitter is a real, focusable tab stop so the
+				// FocusManager / focusableContainer logic agrees with the DOM
+				// tabindex instead of fighting it.
+				splitter.focusable = true;
+				splitter.tabIndex = 0;
 				dom.setAttribute("tabindex", "0");
 				maxWidth = function () {
 					var panelW = (panel.getWidth && panel.getWidth()) || window.innerWidth;
@@ -3643,7 +4007,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 						opts.ariaLabel ||
 						((typeof Locale !== "undefined" &&
 							Locale.LocaleName &&
-							Locale.LocaleName.A11ySplitter) ||
+							Locale.LocaleName.ResizeDividerLabel) ||
 							"Resize divider")
 					);
 					dom.setAttribute("aria-valuemin", String(min));
@@ -3681,8 +4045,8 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 					me.announce(
 						(typeof Locale !== "undefined" &&
 							Locale.LocaleName &&
-							Locale.LocaleName.A11ySplitterResized)
-							? Ext.String.format(Locale.LocaleName.A11ySplitterResized, newWidth)
+							Locale.LocaleName.ColumnWidthMessage)
+							? Ext.String.format(Locale.LocaleName.ColumnWidthMessage, newWidth)
 							: "Width " + newWidth + " pixels"
 					);
 				});
@@ -3692,7 +4056,13 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 						updateAria();
 					});
 				}
-			};
+			},
+			// The locking grid recreates the splitter DOM on layout / reconfigure /
+			// partner-view toggles. The new element loses its tabindex + keydown +
+			// ARIA wiring (apply()'s guard keys off the per-element bound flag), so
+			// re-run apply on those events to keep the divider a stable, in-sequence
+			// tab stop instead of an intermittent one. Buffered to coalesce bursts.
+			rewire = Ext.Function.createBuffered(apply, 50);
 
 		if (!panel) {
 			return;
@@ -3703,6 +4073,70 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		} else {
 			panel.on("afterrender", apply, null, { single : true });
 		}
+
+		panel.on("afterlayout", rewire);
+		if (panel.lockedGrid && panel.lockedGrid.on) {
+			panel.lockedGrid.on("reconfigure", rewire);
+			panel.lockedGrid.on("resize", rewire);
+		}
+	},
+
+	// Move keyboard focus to the board's column divider (the locked-grid splitter
+	// wired by wireSplitterKeyboard). Called after a header filter repopulates the
+	// board so keyboard users land on the resize divider instead of being left on
+	// the (now reset) filter combo. Keyboard-only: a mouse-driven filter must not
+	// have focus yanked or a focus border painted, matching lk-keyboard-focus-mode
+	// usage elsewhere.
+	focusBoardSplitter : function (panel) {
+		var board = panel ||
+				(typeof LeankorApp !== "undefined" && LeankorApp.Gantt && LeankorApp.Gantt.gantt),
+			splitter,
+			dom,
+			active;
+
+		// Keyboard-only: a mouse/touch-driven filter must never have focus yanked
+		// to the divider. Previously only the focus *border* was gated (via CSS on
+		// lk-keyboard-focus-mode) while the actual focus() ran for everyone, which
+		// caused focus to jump to the divider from unrelated elements.
+		if (!this.keyboardFocusActive) {
+			return false;
+		}
+
+		if (!board) {
+			return false;
+		}
+
+		// Prefer the splitter component; fall back to the rendered .x-splitter DOM
+		// inside the board in case it isn't reachable via component query.
+		splitter = board.down && board.down("splitter");
+		dom = (splitter && splitter.el && splitter.el.dom) ||
+			(board.el && board.el.dom && board.el.dom.querySelector(".x-splitter"));
+
+		if (!dom) {
+			return false;
+		}
+
+		// Only land on the divider if focus is still where the filter left it —
+		// the (now reset) combo/field or nothing. If the user has already moved
+		// focus elsewhere, do not override that deliberate move.
+		active = document.activeElement;
+		if (active && active !== document.body &&
+			!/x-form-field|x-combo/.test(active.className || "") &&
+			!(dom.contains && dom.contains(active))) {
+			return false;
+		}
+
+		// tabindex is owned by wireSplitterKeyboard — make sure the divider is
+		// actually wired (and thus a real in-sequence tab stop) before focusing,
+		// so we never land on a half-configured element.
+		if (!dom.leankorSplitterKeyboardBound) {
+			this.wireSplitterKeyboard(board);
+		}
+		if (dom.getAttribute("tabindex") === null) {
+			return false;
+		}
+		dom.focus();
+		return true;
 	},
 
 	enableBoardFocus : function (panel) {
@@ -3747,7 +4181,14 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				return me.getGridRowAnnouncement(record, idx, total);
 			}
 		});
-		if (panel.normalGrid) {
+		// On a locking board the locked (tree) grid owns BOTH row navigation and
+		// the row focus ring, and Left/Right expand/collapse its parent nodes. The
+		// normal grid is the timeline panel — its keyboard interaction is the event
+		// bars (handled by bindSchedulingView), so it must NOT capture row arrow-nav
+		// or paint a row focus ring; otherwise the ring shows on the timeline rows
+		// instead of only on the tree rows. Wire the normal grid only when there is
+		// no locked grid (a non-locking board).
+		if (panel.normalGrid && !panel.lockedGrid) {
 			me.initGridKeyboardNavigation(panel.normalGrid, {
 				announceRowFn: function (record, idx, total) {
 					return me.getGridRowAnnouncement(record, idx, total);
@@ -3866,16 +4307,54 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 			},
 			me
 		);
+
+		// Single focus indicator across the whole board (resource-management
+		// approach): exactly one element shows a focus border at a time. On
+		// every focus change, strip the board focus classes from any element
+		// that does NOT contain the newly focused element, so the previous
+		// border is removed the moment focus moves elsewhere. The element that
+		// now holds focus keeps / re-receives its class via its own handler
+		// (focusGridRow / onEventFocusIn) plus the :focus border. Capture phase
+		// so this runs before those add-class handlers.
+		document.addEventListener(
+			"focusin",
+			function (e) {
+				var active = e && e.target,
+					marked,
+					i,
+					el;
+
+				if (!active) {
+					return;
+				}
+				// Includes the splitter's ExtJS focus class (.x-splitter-focus):
+				// ExtJS sometimes leaves it on a blurred splitter, so a row +
+				// the splitter could both show a border. Strip every marked
+				// element that does not contain the new focus target.
+				marked = document.querySelectorAll(
+					"." + me.rowFocusCls + ", ." + me.eventFocusCls +
+						", .x-splitter-focus");
+				for (i = 0; i < marked.length; i++) {
+					el = marked[i];
+					if (el !== active && !(el.contains && el.contains(active))) {
+						Ext.fly(el).removeCls(me.rowFocusCls);
+						Ext.fly(el).removeCls(me.eventFocusCls);
+						Ext.fly(el).removeCls("x-splitter-focus");
+					}
+				}
+			},
+			true
+		);
 	},
 
 	isKeyboardFocusKey : function (e) {
 		var key = e.getKey && e.getKey(),
 			modifierKeys = [
-				Ext.EventObject.SHIFT || 16,
-				Ext.EventObject.CTRL || 17,
-				Ext.EventObject.ALT || 18,
-				Ext.EventObject.CAPS_LOCK || 20,
-				Ext.EventObject.META || 91
+				Ext.event.Event.SHIFT || 16,
+				Ext.event.Event.CTRL || 17,
+				Ext.event.Event.ALT || 18,
+				Ext.event.Event.CAPS_LOCK || 20,
+				Ext.event.Event.META || 91
 			];
 
 		return !!(key && !Ext.Array.contains(modifierKeys, key));
@@ -3950,7 +4429,10 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 
 	syncSchedulingView : function (panel, view) {
 		var me = this,
-			utilizationPanel = me.isUtilizationPanel(panel);
+			utilizationPanel = me.isUtilizationPanel(panel),
+			items,
+			active,
+			anchor = null;
 
 		view.el.select(view.eventSelector).each(function (eventEl) {
 			me.prepareEventNode(eventEl, utilizationPanel ? -1 : 0, panel, view);
@@ -3962,6 +4444,68 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				.each(function (intervalEl) {
 					me.prepareIntervalNode(intervalEl, panel, view);
 				});
+		}
+
+		// Roving tabindex for the timeline. prepareEventNode / prepareIntervalNode
+		// above make EVERY focusable item a Tab stop, and this method re-runs on
+		// timers/data changes — which kept wiping the roving tabindex that
+		// focusEvent sets, leaving the whole timeline tabbable so Tab got stuck
+		// cycling through every item. Keep exactly ONE item tabbable: the one
+		// that currently has focus (so re-syncs don't move the Tab stop), else
+		// the first. Arrow keys move between items; Tab then exits the timeline.
+		items = utilizationPanel
+			? view.el.select(".gnt-resource-utilization-interval:not([aria-hidden='true'])").elements
+			: view.el.select(view.eventSelector).elements;
+		active = (typeof document !== "undefined") ? document.activeElement : null;
+
+		Ext.Array.forEach(items, function (el) {
+			if (el === active || Ext.fly(el).hasCls(me.eventFocusCls)) {
+				anchor = el;
+			}
+		});
+		if (!anchor && items.length) {
+			anchor = items[0];
+		}
+		Ext.Array.forEach(items, function (el) {
+			el.setAttribute("tabindex", el === anchor ? "0" : "-1");
+		});
+
+		// Strip Bryntum's internal tab stops (RM parity). Bryntum ships several
+		// scroll / axis / subgrid containers with tabindex=0; left as-is, Tab
+		// walks those invisible containers and feels trapped inside the timeline.
+		// The event bars / intervals above are the only intended timeline tab
+		// stops, so force every OTHER tabindex node to -1. Re-run on each sync so
+		// re-renders never reintroduce them.
+		me.neutralizeTimelineTabStops(view.el && view.el.dom);
+	},
+
+	// Force every tabindex node under the scheduling view to -1 except the
+	// focusable event bars / utilization intervals (whose roving tabindex is
+	// managed by syncSchedulingView). Mirrors resource-management's
+	// neutralizeTimelineTabStops so Tab never gets stuck on Bryntum's own
+	// scroll / axis containers.
+	neutralizeTimelineTabStops : function (viewDom) {
+		var preserve = ".sch-event, .gnt-resource-utilization-interval";
+
+		if (!viewDom || !viewDom.querySelectorAll) {
+			return;
+		}
+
+		Ext.Array.each(viewDom.querySelectorAll("[tabindex]"), function (node) {
+			if (node.closest && node.closest(preserve)) {
+				return;
+			}
+			if (node.getAttribute("tabindex") !== "-1") {
+				node.setAttribute("tabindex", "-1");
+			}
+		});
+
+		// The view container itself, if Bryntum left it tabbable.
+		if (viewDom.getAttribute &&
+			viewDom.getAttribute("tabindex") !== null &&
+			viewDom.getAttribute("tabindex") !== "-1" &&
+			!(viewDom.closest && viewDom.closest(preserve))) {
+			viewDom.setAttribute("tabindex", "-1");
 		}
 	},
 
@@ -3984,6 +4528,58 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 			.each(function (rowEl) {
 				me.prepareGridRow(rowEl, gridView);
 			});
+
+		// Keyboard entry into the grid. prepareGridRow above leaves every row
+		// at tabindex=-1; the normal entry point is the header "+" button
+		// (.addBtnTop) whose Tab handler calls focusFirstGridRow. Resource
+		// Schedule in resource-utilization mode clears that header, so without
+		// an anchor the grid has NO Tab stop and keyboard focus can never enter
+		// it. Mirror the timeline's roving anchor: when the panel has no
+		// add-button entry, make exactly ONE row (the focused/selected one,
+		// else the first) tabbable so Tab lands on a real row. Boards that keep
+		// the "+" button are untouched.
+		me.ensureGridRovingAnchor(gridView);
+	},
+
+	// Make exactly one grid row a Tab stop (roving anchor) so keyboard focus
+	// can enter a grid that has no header "+" entry button. No-op when the
+	// owning panel still exposes a .addBtnTop entry (its existing
+	// add-button -> focusFirstGridRow flow already handles entry) or when the
+	// grid has no rows yet.
+	ensureGridRovingAnchor : function (gridView) {
+		var me = this,
+			panel = me.getGridPanel(gridView),
+			rows,
+			anchor,
+			active;
+
+		if (!gridView || !gridView.el) {
+			return;
+		}
+		if (panel && panel.el && panel.el.down(".addBtnTop")) {
+			return;
+		}
+
+		rows = gridView.el.select(me.getGridFocusSelector(gridView)).elements;
+		if (!rows || !rows.length) {
+			return;
+		}
+
+		active = (typeof document !== "undefined") ? document.activeElement : null;
+		Ext.Array.forEach(rows, function (el) {
+			if (
+				el === active ||
+				el.getAttribute("tabindex") === "0" ||
+				Ext.fly(el).hasCls(me.rowFocusCls)) {
+				anchor = el;
+			}
+		});
+		if (!anchor) {
+			anchor = rows[0];
+		}
+		Ext.Array.forEach(rows, function (el) {
+			el.setAttribute("tabindex", el === anchor ? "0" : "-1");
+		});
 	},
 
 	setPanelAccessibility : function (panel) {
@@ -4019,11 +4615,44 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 					});
 			}
 
-			buttonEl.dom.setAttribute("tabindex", "0");
-			buttonEl.dom.setAttribute("role", "button");
-			buttonEl.dom.setAttribute("aria-label", label);
-			buttonEl.dom.setAttribute("title", label);
+			me.prepareHeaderAddButton(buttonEl.dom, label);
 		});
+	},
+
+	getHeaderAddButton : function (panel) {
+		var buttonEl = panel && panel.el && panel.el.down(".addBtnTop");
+
+		return buttonEl && buttonEl.dom ? buttonEl.dom : null;
+	},
+
+	prepareHeaderAddButton : function (buttonDom, label) {
+		if (!buttonDom) {
+			return null;
+		}
+
+		label = label || this.getHeaderAddButtonLabel();
+		buttonDom.setAttribute("tabindex", "0");
+		buttonDom.setAttribute("role", "button");
+		buttonDom.setAttribute("aria-label", label);
+		buttonDom.setAttribute("title", label);
+		return buttonDom;
+	},
+
+	focusHeaderAddButton : function (panel) {
+		var button = this.prepareHeaderAddButton(this.getHeaderAddButton(panel));
+
+		if (!button) {
+			return false;
+		}
+
+		this.setKeyboardFocusMode(true);
+		this.clearFocusedRows();
+		Ext.defer(function () {
+			if (!button.ownerDocument || button.ownerDocument.body.contains(button)) {
+				button.focus();
+			}
+		}, 1);
+		return true;
 	},
 
 	prepareGridRow : function (rowEl, gridView) {
@@ -4127,6 +4756,11 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 			selectionModel =
 				view.getEventSelectionModel && view.getEventSelectionModel();
 
+		// Focus belongs to the event bar alone: drop any lingering row focus
+		// ring (e.g. from the resource row the user came from) so only the
+		// event shows the keyboard outline, not the whole row.
+		this.clearFocusedRows();
+
 		Ext.fly(eventNode || target).addCls(this.eventFocusCls);
 
 		if (
@@ -4145,7 +4779,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 
 	onSchedulingViewKeyDown : function (panel, view, e, target) {
 		var key = e.getKey && e.getKey(),
-			tabKey = Ext.EventObject.TAB || 9,
+			tabKey = Ext.event.Event.TAB || 9,
 			targetEl = target && Ext.fly(target);
 
 		if (
@@ -4177,7 +4811,8 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 			itemSelector = utilizationPanel ?
 				".gnt-resource-utilization-interval:not([aria-hidden='true'])" :
 				".sch-event",
-			lastEventByResource = {};
+			lastEventByResource = {},
+			lastFocusedEvent = null;
 
 		if (!panelDom || !view || panelDom.leankorEventKeyboardNavBound) {
 			return;
@@ -4370,12 +5005,17 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				stopPropagation : Ext.emptyFn,
 				getXY : function () {
 					return [rect.left + Math.min(rect.width / 2, 80), rect.bottom];
-				}
+				},
+				// Let the eventcontextmenu listener open the menu anchored to the
+				// event bar (showBy) instead of raw viewport coords, and focus the
+				// first item — mirrors resource-management's keyboard context menu.
+				keyboardOpen : true,
+				targetEl : eventEl
 			};
 			me.announce(
 				(typeof Locale !== "undefined" &&
 					Locale.LocaleName &&
-					Locale.LocaleName.A11yContextMenuOpened) ||
+					Locale.LocaleName.ContextMenuOpened) ||
 					"Context menu opened"
 			);
 			panel.fireEvent("eventcontextmenu", panel, eventRecord, fakeEvent);
@@ -4392,6 +5032,10 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 			if (!eventEl) {
 				return;
 			}
+
+			// Remember the most recently focused event so the context-menu keys
+			// stay reliable even if focus later drifts off the event bar.
+			lastFocusedEvent = eventEl;
 
 			resource = resolveResourceForEvent(eventEl);
 			id = resource &&
@@ -4423,6 +5067,23 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 					active.closest &&
 					active.closest(".gnt-resource-utilization-interval:not([aria-hidden='true'])");
 			}
+			// Context-menu keys (Enter / Shift+F10 / ContextMenu) must open the
+			// menu for the event the user is on. If live focus has drifted off
+			// the event bar (a timeline re-render moved it, or focus was not
+			// restored after a previous menu closed), fall back to the last
+			// focused event so the menu opens reliably instead of intermittently.
+			// Gated to focus still being inside the scheduling/timeline view so
+			// Enter on a locked-grid resource row keeps selecting (not opening
+			// the event menu).
+			if (!eventEl &&
+				(key === 13 || key === 93 || (key === 121 && event.shiftKey)) &&
+				view && view.el && view.el.dom && active &&
+				view.el.dom.contains(active) &&
+				lastFocusedEvent &&
+				document.body.contains(lastFocusedEvent) &&
+				panelDom.contains(lastFocusedEvent)) {
+				eventEl = lastFocusedEvent;
+			}
 			if (eventEl) {
 				var siblings,
 					index,
@@ -4431,7 +5092,13 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 
 				if (key === 9) {
 					if (event.shiftKey) {
-						handled = me.focusLastGridRow(panel);
+						// Shift+Tab returns to the parallel resource row of this
+						// event (RM behaviour); fall back to the last grid row.
+						handled = focusRow(resolveResourceForEvent(eventEl)) ||
+							me.focusLastGridRow(panel);
+						if (handled) {
+							eventEl.setAttribute("tabindex", "-1");
+						}
 					} else {
 						handled = me.focusNextFocusableAfterPanel(panel) ||
 							me.focusFirstHeaderControl(panel);
@@ -4459,6 +5126,15 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 					index = siblings.indexOf(eventEl);
 					if (siblings[index + (key === 39 ? 1 : -1)]) {
 						focusEvent(siblings[index + (key === 39 ? 1 : -1)]);
+						handled = true;
+					}
+				} else if (key === 38 || key === 40) {
+					// Up / Down walk events vertically (sorted top-to-bottom,
+					// left-to-right) across rows, matching RM.
+					allSorted = sortedAllEvents();
+					index = allSorted.indexOf(eventEl);
+					if (index !== -1 && allSorted[index + (key === 40 ? 1 : -1)]) {
+						focusEvent(allSorted[index + (key === 40 ? 1 : -1)]);
 						handled = true;
 					}
 				}
@@ -4527,7 +5203,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 
 		view.el.dom.addEventListener("keydown", function (event) {
 			var key = event.keyCode || event.which,
-				tabKey = Ext.EventObject.TAB || 9,
+				tabKey = Ext.event.Event.TAB || 9,
 				target = event.target,
 				insideItem = target &&
 					target.closest &&
@@ -4553,9 +5229,9 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 
 	onHeaderAddButtonKeyDown : function (panel, e, target) {
 		var key = e.getKey(),
-			tabKey = Ext.EventObject.TAB || 9,
-			enterKey = Ext.EventObject.ENTER || 13,
-			spaceKey = Ext.EventObject.SPACE || 32;
+			tabKey = Ext.event.Event.TAB || 9,
+			enterKey = Ext.event.Event.ENTER || 13,
+			spaceKey = Ext.event.Event.SPACE || 32;
 
 		this.setKeyboardFocusMode(true);
 
@@ -4929,7 +5605,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 			name = this.getRecordLabel(record);
 
 		return Ext.String.format(
-			(localeName && localeName.A11yRowAnnouncement) || "{0}, row {1} of {2}",
+			(localeName && localeName.RowAnnouncement) || "{0}, row {1} of {2}",
 			Ext.htmlEncode(name || ""),
 			idx + 1,
 			total
@@ -5014,6 +5690,34 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		return gridView.getRecord(rowDom);
 	},
 
+	getFocusedGridRecord : function (gridView) {
+		var rowEl,
+			activeEl,
+			activeFly,
+			selector;
+
+		if (!gridView || !gridView.el) {
+			return null;
+		}
+
+		// Prefer the row carrying the focus class — focusGridRow applies it
+		// synchronously, while the actual DOM focus is moved on a short defer.
+		rowEl = gridView.el.down("." + this.rowFocusCls, true);
+
+		if (!rowEl) {
+			activeEl = (typeof document !== "undefined") ? document.activeElement : null;
+			if (activeEl && gridView.el.contains(activeEl)) {
+				selector = this.getGridFocusSelector(gridView);
+				activeFly = Ext.get(activeEl);
+				rowEl = activeFly && activeFly.is(selector)
+					? activeEl
+					: (activeFly ? activeFly.up(selector, gridView.el, true) : null);
+			}
+		}
+
+		return rowEl ? this.getRecordFromRow(rowEl, gridView) : null;
+	},
+
 	isGridRecordSelected : function (gridView, record) {
 		var selectionModel =
 			gridView &&
@@ -5042,6 +5746,63 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 			!record.isLeaf() &&
 			(record.expand || record.collapse)
 		);
+	},
+
+	// Safe "is this tree row expanded?" check. Tolerates records that have no
+	// isExpanded() method (some surrogate Scheduler/Gantt models) so callers can
+	// branch on expand/collapse without risking a throw that swallows the keypress.
+	isGridRecordExpanded : function (record) {
+		return !!(record && record.isExpanded && record.isExpanded());
+	},
+
+	// Expand/collapse a tree (folder) record from the keyboard, then keep the
+	// focus ring on the same folder row, refresh its aria-expanded state and
+	// announce the change for screen readers. `expand` may be true/false to
+	// force a state, or omitted to toggle. Returns true if it acted.
+	toggleGridFolder : function (view, record, expand) {
+		var me = this,
+			localeName = (typeof Locale !== "undefined") && Locale.LocaleName,
+			isExpanded,
+			willExpand,
+			template;
+
+		if (!view || !me.isExpandableGridRecord(record)) {
+			return false;
+		}
+
+		isExpanded = !!(record.isExpanded && record.isExpanded());
+		willExpand = (typeof expand === "boolean") ? expand : !isExpanded;
+
+		if (willExpand === isExpanded) {
+			return false;
+		}
+
+		if (willExpand) {
+			record.expand();
+			template = (localeName && localeName.FolderExpanded) || "{0}, expanded";
+		} else {
+			record.collapse();
+			template = (localeName && localeName.FolderCollapsed) || "{0}, collapsed";
+		}
+
+		// The tree inserts/removes child rows asynchronously. Once it settles,
+		// refresh the folder row's ARIA, keep keyboard focus on it, and announce.
+		Ext.defer(function () {
+			var node = view.getNode && view.getNode(record);
+
+			if (node) {
+				me.prepareGridRow(node, view);
+				me.focusGridRow(node);
+			}
+			me.announce(
+				Ext.String.format(
+					template,
+					Ext.htmlEncode(me.getRecordLabel(record) || "")
+				)
+			);
+		}, 30);
+
+		return true;
 	},
 
 	getGridRecordLevel : function (record) {

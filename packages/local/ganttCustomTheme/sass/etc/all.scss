@@ -819,6 +819,11 @@ $font-family: dynamic('Open Sans', 'Helvetica Neue', helvetica, arial, verdana, 
 	@include placeholderColorCls($base-gray);
     .x-form-text-field-body-default {
        @extend .fix-width;
+       // Show the full label with only its natural padding (no forced 70px min,
+       // no 120px ellipsis cap from .fix-width) so the focus ring fits the text
+       // tightly without clipping it.
+       min-width: 0 !important;
+       max-width: none !important;
     }
     .x-form-trigger-default {
         width: 19px;
@@ -831,11 +836,15 @@ $font-family: dynamic('Open Sans', 'Helvetica Neue', helvetica, arial, verdana, 
         }
     }
     .x-form-trigger-wrap-default {
-        width: 120px;
+        // Size to the full content (label text + dropdown arrow) so the box — and
+        // the keyboard focus ring drawn on it — hugs the text with a minimal gap
+        // and shows the whole label. max-content expands to fit the text instead
+        // of collapsing the way `width:auto` did (which clipped it).
+        width: max-content !important;
         border-width: 0px;
         border-style: solid;
         border-color: $component-border-color;
-		
+
     }
     .x-form-text-default {
         color: #1b1d1f !important;
@@ -844,6 +853,14 @@ $font-family: dynamic('Open Sans', 'Helvetica Neue', helvetica, arial, verdana, 
         min-height: 30px;
         text-align: right;
 		margin-top : 2px !important;
+        // The value lives in an <input>, which by default reserves ~20 chars of
+        // width regardless of its text — that is what produced the empty gap.
+        // field-sizing:content (Chrome/Edge 123+) makes the input size to its
+        // actual text so the whole label shows with only a small gap. min-width
+        // keeps a sane floor; max-width caps very long values.
+        field-sizing: content;
+        min-width: 28px !important;
+        max-width: 200px;
     }
 }
 
@@ -2027,6 +2044,44 @@ input[type=text]::-ms-clear {
 		content: "\e613";
 		color: $green;
 	}
+	/* "Show header" checkbox: the real focus target is the full-size
+	   <input class="x-form-cb-input"> (position:absolute, 100%x100%), and ExtJS /
+	   :focus-within rules can paint an outline on the field ROW (.x-form-item =
+	   .sch-export-dialog-header) and its wrappers — drawing a stray rectangle
+	   below the small checkbox glyph. Earlier overrides only listed individual
+	   wrappers and missed the field root, so the box survived. Strip the
+	   outline/shadow from the WHOLE checkbox field: the field root, every
+	   focused/focus-within descendant, the input, label and aria error element.
+	   The single tight ring is re-added on the glyph (displayEl,
+	   .x-form-checkbox-focus) by the keyboard-mode rule below. Scoped to this one
+	   field (.sch-export-dialog-header) so nothing else is affected. */
+	.sch-export-dialog-header,
+	.sch-export-dialog-header:focus,
+	.sch-export-dialog-header:focus-within,
+	.sch-export-dialog-header *:focus,
+	.sch-export-dialog-header *:focus-within,
+	.sch-export-dialog-header .x-form-cb-input:focus,
+	.sch-export-dialog-header .x-form-cb-input:focus-visible,
+	.sch-export-dialog-header [data-ref="ariaErrorEl"] {
+		outline: none !important;
+		box-shadow: none !important;
+	}
+}
+/* Re-add the single accessible focus indicator on the checkbox glyph. The focus
+   class lands on the displayEl (.x-form-checkbox-focus), but the displayEl is
+   FULL WIDTH (it carries .x-form-field), so an outline on it draws a full-width
+   rectangle below the small check — that was the stray box. The visible glyph is
+   the displayEl's ::before, so keep the displayEl itself ring-free and draw the
+   tight ring on the ::before glyph only. */
+.lk-keyboard-focus-mode .x-print-field-cls .sch-export-dialog-header .x-form-checkbox-focus {
+	outline: none !important;
+	box-shadow: none !important;
+}
+.lk-keyboard-focus-mode .x-print-field-cls .sch-export-dialog-header .x-form-checkbox-focus:before {
+	outline: 2px solid $keyboard-focus-border-color !important;
+	outline-offset: 2px !important;
+	box-shadow: none !important;
+	border-radius: 2px;
 }
 .x-btn-inner-default-medium {
     font: 400 13px/18px 'Open Sans', sans-serif !important;
@@ -2071,7 +2126,14 @@ input[type=text]::-ms-clear {
 
 
 /* Leankor accessibility and keyboard focus support */
+/* Event/task bar focus border is driven by the actual focused element
+   (:focus), mirroring resource-management. Because only one element can hold
+   :focus at a time, the border is inherently single and always follows focus
+   (the previous bar loses it automatically). The .lk-board-event-focused class
+   is kept as a fallback. */
 .lk-keyboard-focus-mode .sch-event.lk-board-event-focused,
+.lk-keyboard-focus-mode .sch-event:focus,
+.x-keyboard-mode .sch-event:focus,
 .lk-keyboard-focus-mode .gnt-resource-utilization-interval:focus,
 .lk-keyboard-focus-mode .addBtnTop:focus,
 .lk-keyboard-focus-mode .x-splitter:focus,
@@ -2095,7 +2157,9 @@ input[type=text]::-ms-clear {
 }
 .lk-keyboard-focus-mode
     .gnt-resourceutilizationpanel
-    .sch-event.lk-board-event-focused {
+    .sch-event.lk-board-event-focused,
+.lk-keyboard-focus-mode .gnt-resourceutilizationpanel .sch-event:focus,
+.x-keyboard-mode .gnt-resourceutilizationpanel .sch-event:focus {
     outline: none !important;
     box-shadow: none;
 }
@@ -2143,6 +2207,34 @@ input[type=text]::-ms-clear {
     outline: none !important;
     box-shadow: none !important;
 }
+/* The resource-type filter popup is a floating grid (`.resourceGridStyleCls`),
+   not an `.x-window`, so the field focus rules below never reach it. The field is
+   the keyboard tab stop (Enter runs the search, mirroring a click on the icon);
+   outline the whole trigger-wrap via `:focus-within` so focusing the field draws
+   one border around the entire field, icon included. Suppress the input's own
+   inner outline so the two don't double up. Keyboard-only, like the rest. */
+.lk-keyboard-focus-mode .resourceGridStyleCls .x-form-trigger-wrap-focus,
+.lk-keyboard-focus-mode .resourceGridStyleCls .x-form-trigger-wrap:focus-within,
+.lk-keyboard-focus-mode .resourceGridStyleCls .x-form-trigger-wrap-default:focus-within {
+    outline: 2px solid $keyboard-focus-border-color !important;
+    outline-offset: -2px;
+    // Also recolour the field's own border to the focus blue. Without this the
+    // outline sat on top of the default light-gray border, so the search field's
+    // focus ring looked lighter/thinner than the other header items, which set
+    // both outline and border-color (see .lk-control-header-focusable rule).
+    box-shadow: none !important;
+    position: relative;
+    z-index: 6;
+}
+.lk-keyboard-focus-mode .resourceGridStyleCls .x-form-trigger:focus,
+.lk-keyboard-focus-mode .resourceGridStyleCls .x-form-search-trigger:focus,
+.lk-keyboard-focus-mode .resourceGridStyleCls .x-form-clear-trigger:focus,
+.lk-keyboard-focus-mode .resourceGridStyleCls .x-form-text:focus,
+body:not(.lk-keyboard-focus-mode) .resourceGridStyleCls .x-form-trigger-wrap:focus-within,
+body:not(.lk-keyboard-focus-mode) .resourceGridStyleCls .x-form-trigger-wrap-default:focus-within {
+    outline: none !important;
+    box-shadow: none !important;
+}
 .lk-keyboard-focus-mode .x-window .x-btn:focus-within .x-btn-button:focus,
 .lk-keyboard-focus-mode .x-window .x-btn:focus-within .x-btn-inner:focus,
 .lk-keyboard-focus-mode .x-window .x-btn:focus-within .x-btn-wrap:focus {
@@ -2186,30 +2278,54 @@ body:not(.lk-keyboard-focus-mode) .x-window .x-tool-tool-el:focus {
     outline: none !important;
     box-shadow: none !important;
 }
-.lk-keyboard-focus-mode .x-scroller:focus,
-.lk-keyboard-focus-mode .x-scroller-ct:focus,
-.lk-keyboard-focus-mode .x-scroll-scroller:focus,
-.lk-keyboard-focus-mode .x-scrollbar:focus,
-.lk-keyboard-focus-mode .x-scrollbar-thumb:focus,
-.lk-keyboard-focus-mode .x-box-scroller:focus,
-.lk-keyboard-focus-mode .x-box-scroller-body-horizontal:focus,
-.lk-keyboard-focus-mode .x-grid-scrollbar:focus,
-.lk-keyboard-focus-mode .x-grid-scrollbar-clipper:focus,
-.lk-keyboard-focus-mode .x-grid-view:focus,
-.lk-keyboard-focus-mode .x-tree-view:focus,
-.lk-keyboard-focus-mode .x-panel-body:focus,
-.lk-keyboard-focus-mode .x-grid-body:focus,
-.lk-keyboard-focus-mode .x-boundlist:focus,
-.lk-keyboard-focus-mode .x-menu:focus,
-.lk-keyboard-focus-mode .x-menu-body:focus,
-.lk-keyboard-focus-mode [class*="scroller"]:focus,
-.lk-keyboard-focus-mode [class*="scrollbar"]:focus {
-    outline: 2px solid $keyboard-focus-border-color !important;
-    outline-offset: -2px;
+/* The generic `.x-window input:focus` rule above also matches the underlying
+   <input> inside checkbox/radio fields, painting a second large outline
+   below the visible check icon. The styled component already gets its own
+   indicator via `.x-form-checkbox-focus` / `.x-form-radio-focus`, so suppress
+   the underlying input outline to leave just the tight one on the icon. */
+.lk-keyboard-focus-mode .x-window input[type="checkbox"]:focus,
+.lk-keyboard-focus-mode .x-window input[type="radio"]:focus {
+    outline: none !important;
     box-shadow: none !important;
-    position: relative;
-    z-index: 7;
 }
+/* Dropdown / text fields drew TWO blue borders on focus: one on the trigger-wrap
+   (:focus-within) and a second on the inner <input>:focus nested inside it (the
+   "double border" seen on the Print Settings popup combos). Keep only the outer
+   trigger-wrap border; suppress the inner input's outline. Higher specificity
+   than the outline rule above so it wins on the nested input only — fields
+   without a trigger-wrap keep their single input outline. */
+.lk-keyboard-focus-mode .x-window .x-form-trigger-wrap .x-form-text:focus,
+.lk-keyboard-focus-mode .x-window .x-form-trigger-wrap input:focus,
+.lk-keyboard-focus-mode .x-window .x-form-trigger-wrap-default:focus-within .x-form-text:focus,
+.lk-keyboard-focus-mode .x-window .x-form-trigger-wrap-default:focus-within input:focus {
+    outline: none !important;
+    box-shadow: none !important;
+}
+/* The Print Settings dropdowns are read-only (editable:false). ExtJS auto-selects
+   the value text when they receive focus, painting a blue text-highlight over the
+   value on top of the focus border. The value is display-only, so suppress the
+   selection so only the single focus border shows. */
+.x-print-field-cls .x-form-text {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+.x-print-field-cls .x-form-text::selection {
+    background: transparent;
+}
+.x-print-field-cls .x-form-text::-moz-selection {
+    background: transparent;
+}
+/* Container / scroller / boundlist / menu focus rings are intentionally NOT
+   re-enabled in keyboard mode — this aligns Capacity Planning with the
+   resource-management (RM) app, whose keyboard-mode re-enable list contains
+   only granular targets (.x-grid-item-focused / row, cells, buttons, combos,
+   tools, splitter, etc.) and never a scroller or grid/tree/panel container.
+   Re-enabling them ringed the ENTIRE grid/timeline scroll region; the keyboard
+   focus ring instead belongs on the focused row (.lk-board-row-focused) / cell
+   / event, which have their own rules. The body:not(...) suppression below is
+   kept as a defensive guard for non-keyboard (mouse) focus. */
 body:not(.lk-keyboard-focus-mode) .x-scroller:focus,
 body:not(.lk-keyboard-focus-mode) .x-scroller-ct:focus,
 body:not(.lk-keyboard-focus-mode) .x-scroll-scroller:focus,
@@ -2247,6 +2363,24 @@ body:not(.lk-keyboard-focus-mode) [class*="scrollbar"]:focus {
 .nameColumnCls .x-column-header-text:focus {
     outline: none !important;
     box-shadow: none;
+}
+/* Capacity Planning / Resource Scheduling board grids (.backGroudCls): the
+   keyboard focus ring belongs on the individual row (.lk-board-row-focused),
+   never on the whole grid. Ext can still place focus on the grid view/body/
+   scroller container, so suppress the container focus outline here (the general
+   .x-grid-view:focus rule above would otherwise outline the entire grid). */
+.lk-keyboard-focus-mode .backGroudCls .x-grid-view:focus,
+.lk-keyboard-focus-mode .backGroudCls .x-grid-view:focus-within,
+.lk-keyboard-focus-mode .backGroudCls .x-grid-body:focus,
+.lk-keyboard-focus-mode .backGroudCls .x-grid-body:focus-within,
+.lk-keyboard-focus-mode .backGroudCls .x-panel-body:focus,
+.lk-keyboard-focus-mode .backGroudCls .x-panel-body:focus-within,
+.lk-keyboard-focus-mode .backGroudCls .x-scroller:focus,
+.lk-keyboard-focus-mode .backGroudCls .x-scroller:focus-within,
+.lk-keyboard-focus-mode .backGroudCls .x-scroller-ct:focus,
+.lk-keyboard-focus-mode .backGroudCls .x-scroll-scroller:focus {
+    outline: none !important;
+    box-shadow: none !important;
 }
 .lk-keyboard-focus-mode .backGroudCls .lk-board-row-focused,
 .lk-keyboard-focus-mode .lk-board-row-focused {
@@ -2429,14 +2563,23 @@ body.lk-keyboard-focus-mode {
     }
 
     .nameColumnCls .addBtnTop:focus {
-        outline: none !important;
+        /* The + button extends .addBtn (overflow:hidden). A focus ring drawn on
+           the :before glyph with a positive outline-offset sat outside the glyph
+           box and was clipped by the button's / grid header's overflow:hidden, so
+           it never showed. Draw an INSET outline on the button element itself —
+           inset rings paint within the box and nothing in the overflow chain
+           clips them. This block (body.lk-keyboard-focus-mode) is the highest
+           specificity addBtnTop rule, so the ring must live here to win. */
+        outline: 2px solid $keyboard-focus-border-color !important;
+        outline-offset: -2px !important;
         box-shadow: none !important;
+        overflow: visible !important;
+        position: relative;
+        z-index: 6;
     }
 
     .nameColumnCls .addBtnTop:focus:before {
-        display: inline-block;
-        outline: 2px solid $keyboard-focus-border-color !important;
-        outline-offset: 2px;
+        outline: none !important;
         box-shadow: none !important;
     }
 }
@@ -2588,6 +2731,22 @@ body:not(.lk-keyboard-focus-mode) .resourceGridStyleCls .x-grid-cell:focus {
         position: relative;
         z-index: 6;
     }
+
+    /* The "Search Resource Types" field (reference `searchfilterfield`, the only
+       control with `toolbar-custom-textfield`) is the only EDITABLE text input
+       among the header controls. Focus lands on the <input> (.x-form-text), so
+       the trigger-wrap rules above recolour the wrap but the indicator on the
+       input itself stayed the default light gray (#dee1e4), making this field
+       look lighter than the sibling combos. Scope strictly to this field via
+       `toolbar-custom-textfield` so only it gets the blue input outline. */
+    .toolbar-custom-textfield .x-form-text:focus {
+        outline: 2px solid $keyboard-focus-border-color !important;
+        outline-offset: -2px;
+        border-color: $keyboard-focus-border-color !important;
+        box-shadow: none !important;
+        position: relative;
+        z-index: 6;
+    }
 }
 .nameColumnCls .addBtnTop:focus {
     outline: none !important;
@@ -2704,10 +2863,22 @@ body.lk-keyboard-focus-mode .resourceGridStyleCls {
     position: relative;
     z-index: 2;
 }
+/* Menu item keyboard-focus border (e.g. the Resource Schedule event context
+   menu — Discuss / Open Board). ExtJS toggles `.x-menu-item-active` on the
+   arrow-key-highlighted item; CP previously painted no border there, so the
+   keyboard-focused menu item was invisible. Mirrors resource-management. */
+.lk-keyboard-focus-mode .x-menu-item-active,
+.x-keyboard-mode .x-menu-item-active {
+    box-shadow: inset 0 0 0 2px $keyboard-focus-border-color !important;
+}
+/* Setting combo keyboard-focus border. Target ONLY .x-boundlist-item-focused
+   (the keyboard-nav class added by focusItemAt / focusHeaderViewComboList in
+   ControlHeader.js) — NOT .x-boundlist-item-over, which is the mouse-hover
+   class. ExtJS leaves .x-keyboard-mode on <body> after any keyboard use, so
+   including -over here made the border follow the mouse cursor on hover/click.
+   Mirrors the .lk-view-combo-list rule below, which is hover-clean. */
 .lk-keyboard-focus-mode .lk-setting-combo-list .x-boundlist-item-focused,
-.lk-keyboard-focus-mode .lk-setting-combo-list .x-boundlist-item-over,
-.x-keyboard-mode .lk-setting-combo-list .x-boundlist-item-focused,
-.x-keyboard-mode .lk-setting-combo-list .x-boundlist-item-over {
+.x-keyboard-mode .lk-setting-combo-list .x-boundlist-item-focused {
     outline: none !important;
     box-shadow: inset 0 0 0 2px $keyboard-focus-border-color !important;
     box-sizing: border-box;
@@ -2719,13 +2890,71 @@ body.lk-keyboard-focus-mode .resourceGridStyleCls {
     outline: none !important;
     box-shadow: none !important;
 }
+.lk-keyboard-focus-mode .lk-setting-combo-list .x-boundlist-selected.x-boundlist-item-focused,
+.x-keyboard-mode .lk-setting-combo-list .x-boundlist-selected.x-boundlist-item-focused {
+    outline: none !important;
+    box-shadow: inset 0 0 0 2px $keyboard-focus-border-color !important;
+    box-sizing: border-box;
+    position: relative;
+    z-index: 2;
+}
+body:not(.lk-keyboard-focus-mode):not(.x-keyboard-mode) .lk-setting-combo-list .x-boundlist-item:focus,
+body:not(.lk-keyboard-focus-mode):not(.x-keyboard-mode) .lk-setting-combo-list .x-boundlist-item-focused,
+body:not(.lk-keyboard-focus-mode):not(.x-keyboard-mode) .lk-setting-combo-list .x-boundlist-item-over,
+body:not(.lk-keyboard-focus-mode):not(.x-keyboard-mode) .lk-setting-combo-list .x-boundlist-selected.x-boundlist-item-focused,
+body:not(.lk-keyboard-focus-mode):not(.x-keyboard-mode) .lk-setting-combo-list .x-boundlist-selected.x-boundlist-item-over {
+    outline: none !important;
+    box-shadow: none !important;
+    border-color: transparent !important;
+}
+/* Setting & period combos: while the dropdown is open the keyboard-focus
+   indicator belongs to the active list option, not the combo. Suppress the
+   combo's own focus border (it keeps DOM focus on its input) so the border
+   shows on only one element at a time. Gated on .combo-expanded, which is
+   toggled on the combo el in AccessibilityUtil.wireComboAria on expand/collapse. */
+.lk-keyboard-focus-mode .lk-control-header .lk-control-header-focusable.combo-custom-cls-setting.combo-expanded .x-form-trigger-wrap-default,
+.lk-keyboard-focus-mode .lk-control-header .lk-control-header-focusable.combo-custom-cls-setting.combo-expanded .x-form-trigger-wrap-focus,
+.x-keyboard-mode .lk-control-header .lk-control-header-focusable.combo-custom-cls-setting.combo-expanded .x-form-trigger-wrap-default,
+.x-keyboard-mode .lk-control-header .lk-control-header-focusable.combo-custom-cls-setting.combo-expanded .x-form-trigger-wrap-focus,
+.lk-keyboard-focus-mode .lk-control-header .lk-control-header-focusable.combo-custom-cls-period.combo-expanded .x-form-trigger-wrap-default,
+.lk-keyboard-focus-mode .lk-control-header .lk-control-header-focusable.combo-custom-cls-period.combo-expanded .x-form-trigger-wrap-focus,
+.x-keyboard-mode .lk-control-header .lk-control-header-focusable.combo-custom-cls-period.combo-expanded .x-form-trigger-wrap-default,
+.x-keyboard-mode .lk-control-header .lk-control-header-focusable.combo-custom-cls-period.combo-expanded .x-form-trigger-wrap-focus {
+    outline: none !important;
+    box-shadow: none !important;
+    border-color: $lighter-gray !important;
+}
+/* Print popup combos — keyboard-nav focus border.
+   Target .x-boundlist-item-over: ExtJS classic ComboBox keeps DOM focus on
+   the field, so arrow-key navigation moves the "-over" class on the list
+   row (the "-focused" class is never applied here). Mirrors the working
+   resource-management rule at all.scss:2255-2261 but scoped via
+   .lk-print-combo-list (added in MainViewportController.js to each picker)
+   to keep this print-popup-only. Gated on the keyboard-mode body classes
+   so mouse hover keeps its existing background-only styling. */
+.lk-keyboard-focus-mode .lk-print-combo-list .x-boundlist-item-over,
+.x-keyboard-mode .lk-print-combo-list .x-boundlist-item-over {
+    outline: 2px solid $keyboard-focus-border-color !important;
+    outline-offset: -2px !important;
+    box-shadow: none !important;
+    position: relative;
+    z-index: 2;
+}
 .lk-view-combo-list .x-boundlist-item:focus,
 .lk-view-combo-list .x-boundlist-item-focused,
 .lk-view-combo-list .x-boundlist-item-focused:focus,
 .lk-keyboard-focus-mode .lk-view-combo-list .x-boundlist-item:focus,
 .lk-keyboard-focus-mode .lk-view-combo-list .x-boundlist-item-focused,
 .x-keyboard-mode .lk-view-combo-list .x-boundlist-item:focus,
-.x-keyboard-mode .lk-view-combo-list .x-boundlist-item-focused {
+.x-keyboard-mode .lk-view-combo-list .x-boundlist-item-focused,
+/* Native ExtJS ComboBox (the RM-matched path) keeps DOM focus on the field
+   and moves the `.x-boundlist-item-over` class on the list row during arrow-
+   key navigation — the `.x-boundlist-item-focused` / `:focus` classes above
+   are never applied on this path. Add `-over` (keyboard-mode, :not(:hover) so
+   mouse hover keeps its background-only styling) so the focused option shows
+   the keyboard border, mirroring resource-management. */
+.lk-keyboard-focus-mode .lk-view-combo-list .x-boundlist-item-over:not(:hover),
+.x-keyboard-mode .lk-view-combo-list .x-boundlist-item-over:not(:hover) {
     outline: none !important;
     box-shadow: inset 0 0 0 2px $keyboard-focus-border-color !important;
     box-sizing: border-box;
@@ -2797,33 +3026,12 @@ body.lk-keyboard-focus-mode .mycustomTree .x-btn:focus-within .x-btn-wrap:focus 
     box-shadow: none !important;
 }
 
-.lk-keyboard-focus-mode .x-scroller:focus,
-.lk-keyboard-focus-mode .x-scroller:focus-within,
-.lk-keyboard-focus-mode .x-scroller-ct:focus,
-.lk-keyboard-focus-mode .x-scroller-ct:focus-within,
-.lk-keyboard-focus-mode .x-scroll-scroller:focus,
-.lk-keyboard-focus-mode .x-scroll-scroller:focus-within,
-.lk-keyboard-focus-mode .x-scrollbar:focus,
-.lk-keyboard-focus-mode .x-scrollbar:focus-within,
-.lk-keyboard-focus-mode .x-scrollbar-thumb:focus,
-.lk-keyboard-focus-mode .x-scrollbar-thumb:focus-within,
-.lk-keyboard-focus-mode .x-box-scroller:focus,
-.lk-keyboard-focus-mode .x-box-scroller:focus-within,
-.lk-keyboard-focus-mode .x-grid-scrollbar:focus,
-.lk-keyboard-focus-mode .x-grid-scrollbar:focus-within,
-.lk-keyboard-focus-mode .x-grid-scrollbar-clipper:focus,
-.lk-keyboard-focus-mode .x-grid-scrollbar-clipper:focus-within,
-.lk-keyboard-focus-mode [class*="scroller"]:focus,
-.lk-keyboard-focus-mode [class*="scroller"]:focus-within,
-.lk-keyboard-focus-mode [class*="scrollbar"]:focus,
-.lk-keyboard-focus-mode [class*="scrollbar"]:focus-within {
-    border: 2px solid $keyboard-focus-border-color !important;
-    box-shadow: none !important;
-    box-sizing: border-box;
-    outline: none !important;
-    position: relative;
-    z-index: 9;
-}
+/* Removed: the scroller/scrollbar `:focus-within` border block. Because
+   `:focus-within` matches whenever ANY descendant is focused, a focused row /
+   cell / event inside the grid or timeline scroll container drew a 2px border
+   around the ENTIRE scroll region (the unwanted blue rectangle). RM has no
+   scroller focus styling at all; the keyboard focus ring belongs on the
+   focused row / cell / event, each of which has its own dedicated rule. */
 
 .x-keyboard-mode .nameColumnCls.x-column-header-focus,
 .x-keyboard-mode .nameColumnCls.x-column-header-focus:focus,
@@ -2855,17 +3063,24 @@ body.lk-keyboard-focus-mode .mycustomTree .x-btn:focus-within .x-btn-wrap:focus 
 
 .x-keyboard-mode .nameColumnCls .addBtnTop:focus,
 .lk-keyboard-focus-mode .nameColumnCls .addBtnTop:focus {
-    outline: none !important;
+    /* The + button extends .addBtn, which has overflow:hidden. The focus ring
+       used to be drawn on the :before glyph with a POSITIVE outline-offset, so
+       it sat outside the glyph box and got clipped by the button's (and the
+       grid header cell's) overflow:hidden — the ring never showed properly.
+       Draw an INSET outline on the button element itself instead: inset rings
+       paint within the element box, so nothing in the overflow chain clips them. */
+    outline: 2px solid $keyboard-focus-border-color !important;
+    outline-offset: -2px !important;
     box-shadow: none !important;
+    overflow: visible !important;
     position: relative;
     z-index: 6;
 }
 
 .x-keyboard-mode .nameColumnCls .addBtnTop:focus:before,
 .lk-keyboard-focus-mode .nameColumnCls .addBtnTop:focus:before {
-    display: inline-block;
-    outline: 2px solid $keyboard-focus-border-color !important;
-    outline-offset: 2px;
+    /* Ring now lives on the button element (above); drop the clipped glyph ring. */
+    outline: none !important;
     box-shadow: none !important;
 }
 

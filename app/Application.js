@@ -62,11 +62,11 @@ Ext.define('LeankorApp.Application', {
 		Ext.getDoc().on('keydown', function (e) {
 			var key = e.getKey && e.getKey(),
 			modifierKeys = [
-				Ext.EventObject.SHIFT || 16,
-				Ext.EventObject.CTRL || 17,
-				Ext.EventObject.ALT || 18,
-				Ext.EventObject.CAPS_LOCK || 20,
-				Ext.EventObject.META || 91
+				Ext.event.Event.SHIFT || 16,
+				Ext.event.Event.CTRL || 17,
+				Ext.event.Event.ALT || 18,
+				Ext.event.Event.CAPS_LOCK || 20,
+				Ext.event.Event.META || 91
 			];
 
 			if (key && !Ext.Array.contains(modifierKeys, key) && Ext.getBody()) {
