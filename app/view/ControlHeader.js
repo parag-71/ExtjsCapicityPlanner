@@ -387,6 +387,91 @@ Ext.define('LeankorApp.view.ControlHeader', {
 		Ext.getDoc().on("keydown", this.onHeaderDocumentKeyDown, this);
 		Ext.getDoc().on("mousedown", this.onHeaderPointerDown, this);
 		Ext.getDoc().on("touchstart", this.onHeaderPointerDown, this);
+		// Capture-phase Shift+Tab handler. Must run BEFORE ExtJS collapses an
+		// open header combo: the combo's own collapse handler restores focus
+		// onto the same combo (~25ms later) and overrides the tab move, which
+		// left focus stranded on the just-closed icon.
+		this.leankorHeaderShiftTabCapture = Ext.bind(this.onHeaderComboShiftTabCapture, this);
+		document.addEventListener("keydown", this.leankorHeaderShiftTabCapture, true);
+		this.on("destroy", function () {
+			if (this.leankorHeaderShiftTabCapture) {
+				document.removeEventListener("keydown", this.leankorHeaderShiftTabCapture, true);
+			}
+		}, this, { single: true });
+	},
+	onHeaderComboShiftTabCapture: function (e) {
+		var TAB = 9,
+		combos,
+		combo = null,
+		controls,
+		index,
+		prev,
+		comboEl,
+		focusPrev,
+		i;
+
+		if (this.destroyed || !this.el || !this.el.dom) {
+			return;
+		}
+		if (!e.shiftKey || (e.keyCode !== TAB && e.which !== TAB && e.key !== "Tab")) {
+			return;
+		}
+
+		// Act only when one of THIS header's combos is currently open.
+		combos = this.query("combo");
+		for (i = 0; i < combos.length; i++) {
+			if (combos[i].isExpanded) {
+				combo = combos[i];
+				break;
+			}
+		}
+		if (!combo) {
+			return;
+		}
+
+		controls = this.getFocusableHeaderControls();
+		index = Ext.Array.indexOf(controls, combo);
+		prev = index > 0 ? controls[index - 1] : null;
+
+		// Stop the collapse from snapping focus back onto the combo.
+		combo.leankorSkipRestoreFocus = true;
+
+		if (!prev) {
+			// No previous header control: just close, let focus leave the header.
+			combo.collapse();
+			return;
+		}
+
+		// Take full control of Shift+Tab while a header dropdown is open. ExtJS
+		// would collapse the combo and restore focus onto it; instead we close
+		// it and move focus to the previous header control ourselves. Works
+		// whether focus is on the combo input or inside the open list.
+		e.preventDefault();
+		e.stopPropagation();
+		combo.collapse();
+
+		comboEl = (combo.el && combo.el.dom) || null;
+		focusPrev = function () {
+			if (!prev || prev.destroyed) {
+				return;
+			}
+			if (prev.focus) {
+				prev.focus();
+			} else if (prev.el && prev.el.dom) {
+				prev.el.dom.focus();
+			}
+		};
+
+		focusPrev();
+		// Re-assert after the collapse focus-restore window (~25ms) in case
+		// focus is still pulled back onto the just-closed combo.
+		Ext.defer(function () {
+			var active = document.activeElement;
+			if (comboEl && (active === comboEl ||
+				(comboEl.contains && comboEl.contains(active)))) {
+				focusPrev();
+			}
+		}, 60);
 	},
 
 	onHeaderPointerDown : function (e, target) {
