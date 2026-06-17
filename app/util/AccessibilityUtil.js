@@ -1487,6 +1487,18 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 						// Enter, so navigating never changes the multi-selection.
 						focusRowEl(sibling);
 						sibling.focus();
+					},
+					getVisibleRowEls = function () {
+						return Ext.Array.toArray(view.el.dom.querySelectorAll(".x-grid-item"));
+					},
+					focusEdgeRow = function (first) {
+						var rows = getVisibleRowEls(),
+							row = first ? rows[0] : rows[rows.length - 1];
+
+						if (row) {
+							focusRowEl(row);
+							row.focus();
+						}
 					};
 
 				view.el.dom.addEventListener("focus", function (e) {
@@ -1556,14 +1568,16 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 							}
 							return;
 						}
-						// Leaf node: toggle selection (select if not selected, deselect
-						// if already selected). Enter mirrors Space here.
 						var smEnter = treePanel.getSelectionModel && treePanel.getSelectionModel();
 						if (smEnter) {
-							if (smEnter.isSelected(rec)) {
-								smEnter.deselect(rec);
+							if (e.shiftKey) {
+								if (smEnter.isSelected(rec)) {
+									smEnter.deselect(rec);
+								} else {
+									smEnter.select(rec, true);
+								}
 							} else {
-								smEnter.select(rec, true);
+								smEnter.select(rec, false);
 							}
 						}
 						return;
@@ -1592,10 +1606,14 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 						}
 						var sm = treePanel.getSelectionModel && treePanel.getSelectionModel();
 						if (sm) {
-							if (sm.isSelected(rec)) {
-								sm.deselect(rec);
+							if (e.shiftKey) {
+								if (sm.isSelected(rec)) {
+									sm.deselect(rec);
+								} else {
+									sm.select(rec, true);
+								}
 							} else {
-								sm.select(rec, true);
+								sm.select(rec, false);
 							}
 						}
 						return;
@@ -1605,7 +1623,6 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 						return;
 					}
 
-					// Up / Down move between visible tree nodes (siblings).
 					if (key === 38 || key === 40) {
 						e.preventDefault();
 						e.stopPropagation();
@@ -1613,6 +1630,16 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 							e.stopImmediatePropagation();
 						}
 						navigateSibling(rec, key === 40 ? "next" : "prev");
+						return;
+					}
+
+					if (key === 36 || key === 35) {
+						e.preventDefault();
+						e.stopPropagation();
+						if (e.stopImmediatePropagation) {
+							e.stopImmediatePropagation();
+						}
+						focusEdgeRow(key === 36);
 						return;
 					}
 
