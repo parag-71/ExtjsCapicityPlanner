@@ -1256,6 +1256,23 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 activeDialogue.down('#cancel').setTooltip(Locale.LocaleName.Cancel);
                 activeDialogue.tools['close'].setTooltip(Locale.LocaleName.CloseDialog);
                 LeankorApp.util.AccessibilityUtil.initCloseToolAccessibility(activeDialogue);
+                (function () {
+                    var styleId = 'lk-print-focus-fix',
+                        existing = document.getElementById(styleId);
+                    if (existing) { return; }
+                    var style = document.createElement('style');
+                    style.id = styleId;
+                    style.textContent = [
+                        '.x-print-field-cls .x-form-trigger-wrap-focus {',
+                          'outline-offset: 2px !important;',
+                        '}',
+                        '.x-print-field-cls .x-form-cb-input:focus {',
+                          'outline: 2px solid rgb(0, 120, 215) !important;',
+                          'outline-offset: 2px !important;',
+                        '}',
+                    ].join(' ');
+                    document.head.appendChild(style);
+                }());
                 Ext.defer(function () {
                     var first = activeDialogue.form && activeDialogue.form.items &&
                         activeDialogue.form.items.items && activeDialogue.form.items.items[0];
@@ -1266,7 +1283,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 Ext.Array.forEach(activeDialogue.form.items.items, function (item, index) {
                     var field = item.name;
                     // a11y: tag combo picker so SCSS can draw a keyboard-focus border
-                    // on the currently navigated item. Picker is created lazily, so
+                    // on the currently navigated item. Picker is created lazily, soBug_180
                     // attach on first expand. Skips non-combo fields (DPI, showHeader).
                     if (item.getPicker) {
                         item.on('expand', function (cmp) {
