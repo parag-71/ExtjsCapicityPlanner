@@ -172,6 +172,7 @@ Ext.define("LeankorApp.view.ResourceSchedule", {
 		eventcontextmenu: function (scheduler, eventRecord, e, eOpts) {
 			_LOG && console.log('eventcontextmenu of RS');
 			e.stopEvent(); // Stop browsers
+			LeankorApp.util.AccessibilityUtil.announce(Locale.LocaleName.ContextMenuOpened);
 			var SchMenu = Ext.create('Ext.menu.Menu', {
 					width: 60,
 					floating: true, // usually you want this set to True (default)
@@ -298,6 +299,11 @@ Ext.define("LeankorApp.view.ResourceSchedule", {
 		 */
 		beforeeventdrag: function (scheduler, record, e) {
 			if (record.get('Type') === 'FSL' || !record.get('hasEditAccess')) {
+				LeankorApp.util.AccessibilityUtil.announceError(
+					record.get('Type') === 'FSL'
+						? Locale.LocaleName.FslCannotMove
+						: Locale.LocaleName.MoveActivityToInactiveUserError
+				);
 				return false;
 			}
 		},
@@ -342,6 +348,7 @@ Ext.define("LeankorApp.view.ResourceSchedule", {
 							LeankorApp.Gantt.getView().setLoading(false);
 							dragContext.draggedRecords[i].reject();
 							// showing Message Can not assign Inactive user.
+							LeankorApp.util.AccessibilityUtil.announceError(Locale.LocaleName.AssignInactiveUserError);
 							LeankorApp.Gantt.alertMsgBox(Locale.LocaleName.AssignInactiveUserError);
 							dragContext.finalize(false);
 							return false;
@@ -362,6 +369,7 @@ Ext.define("LeankorApp.view.ResourceSchedule", {
 							if (dragContext.timeDiff > 86400000 || dragContext.timeDiff < -86400000) {
 
 								// showing Message can not move activity on different date for same user.
+								LeankorApp.util.AccessibilityUtil.announceError(Locale.LocaleName.MoveActivityToInactiveUserError);
 								LeankorApp.Gantt.alertMsgBox(Locale.LocaleName.MoveActivityToInactiveUserError);
 							}
 						}
@@ -369,12 +377,14 @@ Ext.define("LeankorApp.view.ResourceSchedule", {
 					} else {
 						dragContext.draggedRecords[i].reject();
 						// showing Message resource is already assigned.
+						LeankorApp.util.AccessibilityUtil.announceError(Locale.LocaleName.AlreadyAssignedToCardMsg);
 						LeankorApp.Gantt.alertMsgBox(Locale.LocaleName.AlreadyAssignedToCardMsg);
 					}
 				} else {
 					// showing Message can not move activity on different date for same user.
 					if (dragContext.timeDiff > 86400000 || dragContext.timeDiff < -86400000) {
 
+						LeankorApp.util.AccessibilityUtil.announceError(Locale.LocaleName.MoveActivityToInactiveUserError);
 						LeankorApp.Gantt.alertMsgBox(Locale.LocaleName.MoveActivityToInactiveUserError);
 					}
 				} //eof code
@@ -404,11 +414,19 @@ Ext.define("LeankorApp.view.ResourceSchedule", {
 		 *@method aftereventdrop
 		 *@Description method is used to sorting assignmentPanel when drag and drop any task
 		 */
-		aftereventdrop: function () {
+		aftereventdrop: function (scheduler, eventRecords) {
 			var assignmentPanel = Ext.ComponentQuery.query('[xtype=assignmentgridpanel]')[0];
 			Ext.defer(function () {
 				assignmentPanel && assignmentPanel.getStore().sort('Name', 'ASC');
 			}, 500);
+
+			var rec = eventRecords && eventRecords[0];
+			if (rec && rec.getStartDate) {
+				var dateStr = Ext.Date.format(rec.getStartDate(), 'D M j, Y g:i A');
+				LeankorApp.util.AccessibilityUtil.announce(
+					Ext.String.format(Locale.LocaleName.EventMoved, dateStr)
+				);
+			}
 		}
 	}
 });

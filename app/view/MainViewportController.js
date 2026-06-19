@@ -1041,6 +1041,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
         LeankorApp.Gantt.gantt.shiftPrevious();
         var me = this;
         typeof me.objFilter != 'undefined' && me.getAllResources(me.objFilter);
+        LeankorApp.util.AccessibilityUtil.announce(Locale.LocaleName.ShiftedPrevious);
     },
 
     /**
@@ -1051,6 +1052,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
         LeankorApp.Gantt.gantt.shiftNext();
         var me = this;
         typeof me.objFilter != 'undefined' && me.getAllResources(me.objFilter);
+        LeankorApp.util.AccessibilityUtil.announce(Locale.LocaleName.ShiftedNext);
     },
 
     /**
@@ -1119,6 +1121,10 @@ Ext.define('LeankorApp.view.MainViewportController', {
         var start = LeankorApp.Gantt.gantt.taskStore.getTotalTimeSpan().start ? LeankorApp.Gantt.gantt.taskStore.getTotalTimeSpan().start : LeankorApp.Gantt.gantt.getStart();
         LeankorApp.Gantt.gantt.switchViewPreset(combo.getValue(), start);
         typeof me.objFilter != 'undefined' && me.getAllResources(me.objFilter);
+        var periodName = (records && records.data && records.data.name) || combo.getValue();
+        LeankorApp.util.AccessibilityUtil.announce(
+            Ext.String.format(Locale.LocaleName.PeriodChanged, Ext.htmlEncode(periodName))
+        );
     },
 
     /**
@@ -1167,6 +1173,12 @@ Ext.define('LeankorApp.view.MainViewportController', {
             partnerView.setVisible(true);
         }
         partnerView.refreshViews();
+        var selectedName = (records && records[0] && records[0].get && records[0].get('name')) || '';
+        if (selectedName) {
+            LeankorApp.util.AccessibilityUtil.announce(
+                Ext.String.format(Locale.LocaleName.ColumnsChanged, Ext.htmlEncode(selectedName))
+            );
+        }
         combo.reset();
         Ext.defer(function () {
             assignmentPanel.getStore().sort('Name', 'ASC');
@@ -1243,6 +1255,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 var me = this;
                 typeof me.objFilter != 'undefined' && me.getAllResources(me.objFilter);
                 combo.reset();
+                LeankorApp.util.AccessibilityUtil.announce(Locale.LocaleName.ViewZoomedToFit);
                 break;
             case "Print": // Call print function and also set default options for print dialogue box
                 ganttPanel.getPlugin('printPlugin').exportDialogConfig.dateRangeFormat = glueforceUtil.getDateFormat(portfolio.dateFormatOrder[0] + '/' + portfolio.dateFormatOrder[1] + '/' + portfolio.dateFormatOrder[2]);
@@ -1427,11 +1440,13 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 var me = this;
                 typeof me.objFilter != 'undefined' && me.getAllResources(me.objFilter);
                 combo.reset();
+                LeankorApp.util.AccessibilityUtil.announce(Locale.LocaleName.JumpedToToday);
                 break;
 
             default:
                 break;
         }
+        if (value === 'Print') { LeankorApp.util.AccessibilityUtil.announce(Locale.LocaleName.PrintOpened); }
     },
     toggleProjectFilterFolder: function (popup, record) {
         var me = this,
@@ -2611,6 +2626,14 @@ Ext.define('LeankorApp.view.MainViewportController', {
             var value = Ext.ComponentQuery.query("#searchfilterfield")[0].getValue(),
                 regexp = new RegExp(Ext.String.escapeRegex(value), 'i')
             LeankorApp.Gantt.gantt.taskStore.resourceStore.filter('name', regexp);
+            var resourceStore = LeankorApp.Gantt.gantt.taskStore.resourceStore,
+                count = resourceStore.getCount(),
+                total = (typeof resourceStore.getTotalCount === 'function')
+                    ? resourceStore.getTotalCount()
+                    : (resourceStore.getData() && resourceStore.getData().getSource()
+                        ? resourceStore.getData().getSource().getCount()
+                        : count);
+            LeankorApp.util.AccessibilityUtil.announceFiltered(count, total || count);
         } else {
             LeankorApp.Gantt.gantt.taskStore.resourceStore.clearFilter();
         }

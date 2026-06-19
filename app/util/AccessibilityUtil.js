@@ -260,6 +260,33 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		}, 80);
 	},
 
+	announceError : function (text) {
+		var me = this,
+			el;
+
+		if (!text) {
+			return;
+		}
+
+		el = me.createLiveRegion(true);
+		clearTimeout(me.announceTimerAssertive);
+		clearTimeout(me.announceClearTimerAssertive);
+		el.textContent = "";
+		me.announceTimerAssertive = setTimeout(function () {
+			el.textContent = text;
+			me.announceClearTimerAssertive = setTimeout(function () {
+				el.textContent = "";
+			}, 4000);
+		}, 50);
+	},
+
+	announceFiltered : function (count, total) {
+		var localeName = typeof Locale !== "undefined" && Locale.LocaleName,
+			tpl = (localeName && localeName.FilteredCount) || "{0} of {1} match";
+
+		this.announce(Ext.String.format(tpl, count, total));
+	},
+
 	setBusy : function (target, busy) {
 		var dom,
 			localeName = typeof Locale !== "undefined" && Locale.LocaleName;
@@ -3309,7 +3336,15 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
         dom.setAttribute('role', role);
         dom.setAttribute('aria-selected', selected ? 'true' : 'false');
         if (record && record.getDepth) {
-            dom.setAttribute('aria-level', String(record.getDepth() + 1));
+            // aria-level is 1-based from the first VISIBLE level. When the tree
+            // root is hidden (rootVisible === false), getDepth() is already
+            // correct for visible nodes; adding +1 pushes the top node to
+            // "level 2". Only add +1 when the root is actually shown.
+            dom.setAttribute(
+                'aria-level',
+                String(popup.rootVisible === false
+                    ? record.getDepth()
+                    : record.getDepth() + 1));
         }
         if (record && record.isLeaf && !record.isLeaf()) {
             dom.setAttribute(
@@ -3959,8 +3994,30 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 					row.setAttribute("aria-label", Ext.htmlEncode(label));
 				}
 				if (tr) {
+					// aria-level: prefer record.getDepth() with a rootVisible
+					// adjustment so the first VISIBLE level reads as 1. ExtJS's
+					// own <tr> aria-level counts the hidden root, which makes
+					// NVDA announce the top node as "level 2". Fall back to the
+					// <tr> value (also adjusted) only when getDepth is absent.
+					var level = null;
+					if (typeof record.getDepth === "function") {
+						level = treePanel.rootVisible === false
+							? record.getDepth()
+							: record.getDepth() + 1;
+					} else {
+						var lifted = parseInt(tr.getAttribute("aria-level"), 10);
+						if (!isNaN(lifted)) {
+							level = treePanel.rootVisible === false
+								? lifted - 1
+								: lifted;
+						}
+					}
+					if (level !== null && !isNaN(level)) {
+						row.setAttribute("aria-level", String(level));
+						tr.setAttribute("aria-level", String(level));
+					}
 					Ext.Array.forEach(
-						["aria-level", "aria-expanded", "aria-selected"],
+						["aria-expanded", "aria-selected"],
 						function (attr) {
 							var value = tr.getAttribute(attr);
 

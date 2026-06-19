@@ -668,6 +668,24 @@ Ext.define('LeankorApp.view.ControlHeader', {
 	bindHeaderComboKeys : function () {
 		this.syncHeaderControlAriaLabels();
 
+		Ext.Array.forEach(this.query("field"), function (field) {
+			if (!field.el || !field.el.dom) {
+				return;
+			}
+
+			var root = field.el.dom,
+				tables = Ext.Array.toArray(root.querySelectorAll("table"));
+
+			if (root.tagName === "TABLE") {
+				tables.push(root);
+			}
+
+			Ext.Array.each(tables, function (tbl) {
+				tbl.removeAttribute("aria-label");
+				tbl.setAttribute("role", "presentation");
+			});
+		});
+
 		Ext.Array.forEach(
 			this.query("combo"),
 			function (combo) {
@@ -1219,7 +1237,11 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			}
 
 			if (cmp.el && cmp.el.dom) {
-				cmp.el.dom.setAttribute("aria-label", label);
+				if (cmp.inputEl && cmp.inputEl.dom) {
+					cmp.el.dom.removeAttribute("aria-label");
+				} else {
+					cmp.el.dom.setAttribute("aria-label", label);
+				}
 			}
 		},
 			this);
