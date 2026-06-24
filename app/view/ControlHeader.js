@@ -668,24 +668,6 @@ Ext.define('LeankorApp.view.ControlHeader', {
 	bindHeaderComboKeys : function () {
 		this.syncHeaderControlAriaLabels();
 
-		Ext.Array.forEach(this.query("field"), function (field) {
-			if (!field.el || !field.el.dom) {
-				return;
-			}
-
-			var root = field.el.dom,
-				tables = Ext.Array.toArray(root.querySelectorAll("table"));
-
-			if (root.tagName === "TABLE") {
-				tables.push(root);
-			}
-
-			Ext.Array.each(tables, function (tbl) {
-				tbl.removeAttribute("aria-label");
-				tbl.setAttribute("role", "presentation");
-			});
-		});
-
 		Ext.Array.forEach(
 			this.query("combo"),
 			function (combo) {
@@ -992,16 +974,14 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			return;
 		}
 
-		if (e.shiftKey && index <= 0) {
-			// Shift+Tab off the first option: close the list and move to the
-			// PREVIOUS header control (not back onto the same combo icon).
+		if (e.shiftKey) {
 			e.stopEvent();
 			combo.leankorSkipRestoreFocus = true;
 			combo.collapse();
 			if (!this.focusPreviousHeaderControl(combo)) {
 				this.restoreHeaderControlFocus(combo);
 			}
-		} else if (!e.shiftKey && index === (items || []).length - 1) {
+		} else if (!e.shiftKey) {
 			e.stopEvent();
 			combo.leankorSkipRestoreFocus = true;
 			combo.collapse();
@@ -1170,10 +1150,7 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			// focus into the list (and handles stores that rebuild on expand,
 			// e.g. viewChange).
 			combo.expand();
-		} else if (
-			key === tabKey &&
-			combo.isExpanded &&
-			e.shiftKey) {
+		} else if (key === tabKey && e.shiftKey) {
 			e.stopEvent();
 			this.closeHeaderComboAndFocusPrevious(combo);
 		} else if (
@@ -1182,8 +1159,15 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			combo.leankorHeaderViewCombo) {
 			e.stopEvent();
 			this.focusHeaderViewComboList(combo);
-		} else if (key === tabKey && combo.isExpanded) {
+		} else if (key === tabKey) {
+			e.stopEvent();
+			combo.leankorSkipRestoreFocus = true;
 			combo.collapse();
+			Ext.defer(function () {
+				if (!combo.destroyed) {
+					this.focusNextHeaderControl(combo);
+				}
+			}, 50, this);
 		} else if (key === escKey && combo.isExpanded) {
 			e.stopEvent();
 			combo.collapse();
@@ -1237,11 +1221,7 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			}
 
 			if (cmp.el && cmp.el.dom) {
-				if (cmp.inputEl && cmp.inputEl.dom) {
-					cmp.el.dom.removeAttribute("aria-label");
-				} else {
-					cmp.el.dom.setAttribute("aria-label", label);
-				}
+				cmp.el.dom.setAttribute("aria-label", label);
 			}
 		},
 			this);
