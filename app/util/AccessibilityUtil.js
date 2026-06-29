@@ -848,11 +848,14 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				return;
 			}
 
-			// Land focus directly on the first row of the upper grid section
-			// (mirrors resource-management's skip link, which jumps to the first
-			// grid row). In the empty-board state there is no row, so land on the
-			// region and route the next forward Tab to the grid add button.
+			// Land focus on the "+" (Add) icon in the main grid header, so a
+			// keyboard user arriving via the skip link starts on the panel's
+			// primary action (per product). Fall back to the first grid row, then
+			// the timeline, only when the + icon is absent.
 			me.setKeyboardFocusMode(true);
+			if (me.focusHeaderAddButton(mainPanel)) {
+				return;
+			}
 			if (me.focusFirstGridRow(mainPanel)) {
 				return;
 			}
@@ -1142,9 +1145,26 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				node.setAttribute("tabindex", "0");
 				node.focus();
 				return true;
-			};
+			},
+			clearActiveViewRow = function (view) {
+				if (popup.destroyed || !view || !view.el) {
+					return;
+				}
+				view.el.select(".lk-popup-row-focused").removeCls("lk-popup-row-focused");
+			},
+			popupView;
 
 			popup.el.dom._popupTabTrapBound = true;
+			popupView = Ext.isFunction(popup.getView) ? popup.getView() : null;
+			if (
+				popupView &&
+				popupView.el &&
+				!popupView.leankorPopupFocusLeaveBound) {
+				popupView.leankorPopupFocusLeaveBound = true;
+				popupView.el.on("focusleave", function () {
+					clearActiveViewRow(popupView);
+				});
+			}
 			popup.el.dom.addEventListener("keydown", function (e) {
 				var focusables,
 					active,
@@ -1239,7 +1259,10 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				sm,
 				lastSelectionKey = null,
 				announceTimer = null,
-				clearTimer = null;
+				clearTimer = null,
+				announcementsActive = true,
+				cancelAnnouncements,
+				getPopupView;
 
 			if (popup._popupAnnouncementsBound) {
 				return;
@@ -1257,6 +1280,40 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				document.body.appendChild(liveRegion);
 			}
 
+			cancelAnnouncements = function () {
+				announcementsActive = false;
+				if (announceTimer) {
+					window.clearTimeout(announceTimer);
+					announceTimer = null;
+				}
+				if (clearTimer) {
+					window.clearTimeout(clearTimer);
+					clearTimer = null;
+				}
+				if (liveRegion) {
+					liveRegion.textContent = "";
+				}
+			};
+
+			getPopupView = function () {
+				if (
+					!announcementsActive ||
+					!popup ||
+					popup.destroyed ||
+					popup.destroying ||
+					!popup.el ||
+					!popup.el.dom ||
+					!popup.getView) {
+					return null;
+				}
+
+				try {
+					return popup.getView();
+				} catch (ignore) {
+					return null;
+				}
+			};
+
 			var getRecord = function () {
 				var selectionModel,
 					selection,
@@ -1268,30 +1325,34 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				// closed (close -> store.removeAll -> selectionchange). Once the popup is
 				// destroyed its selection model is torn down and getSelection() throws on a
 				// null internal collection, so bail out before touching it.
-				if (popup.destroyed) {
+				if (!announcementsActive || popup.destroyed || popup.destroying) {
 					return null;
 				}
 
-				selectionModel = popup.getSelectionModel && popup.getSelectionModel();
-				selection = selectionModel && selectionModel.getSelection && selectionModel.getSelection();
+				try {
+					selectionModel = popup.getSelectionModel && popup.getSelectionModel();
+					selection = selectionModel && selectionModel.getSelection && selectionModel.getSelection();
+				} catch (ignore) {
+					return null;
+				}
 				rec = selection && selection[0];
 
 				if (rec) {
 					return rec;
 				}
 
-				popupView = popup.getView && popup.getView();
+				popupView = getPopupView();
 				store = popupView && popupView.getStore && popupView.getStore();
 				return store && store.getCount && store.getCount() ? store.getAt(0) : null;
 			};
 
 			var speak = function (rec) {
-				var popupView = popup.getView && popup.getView(),
+				var popupView = getPopupView(),
 					store = popupView && popupView.getStore && popupView.getStore(),
 					name,
 					index;
 
-				if (!rec || !rec.get || !store || popup.destroyed) {
+				if (!announcementsActive || !rec || !rec.get || !store) {
 					return false;
 				}
 
@@ -1309,13 +1370,13 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				}
 				liveRegion.textContent = "";
 				announceTimer = window.setTimeout(function () {
-					if (popup.destroyed) {
+					if (!announcementsActive || popup.destroyed || popup.destroying) {
 						return;
 					}
 					liveRegion.textContent =
 						me.cleanAriaText(name) + ", " + (index + 1) + " of " + store.getCount();
 					clearTimer = window.setTimeout(function () {
-						if (!popup.destroyed) {
+						if (announcementsActive && !popup.destroyed && !popup.destroying) {
 							liveRegion.textContent = "";
 						}
 					}, 4000);
@@ -1332,19 +1393,13 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 			popup.on("show", function () {
 				announceCurrent(600);
 			});
-			popup.on("destroy", function () {
-				if (announceTimer) {
-					window.clearTimeout(announceTimer);
-				}
-				if (clearTimer) {
-					window.clearTimeout(clearTimer);
-				}
-			});
+			popup.on("close", cancelAnnouncements);
+			popup.on("destroy", cancelAnnouncements);
 			if (popup.isVisible && popup.isVisible()) {
 				announceCurrent(600);
 			}
 
-			view = popup.getView && popup.getView();
+			view = getPopupView();
 			viewDomRef = view && view.el && view.el.dom;
 			if (viewDomRef) {
 				viewDomRef.addEventListener("focus", function () {
@@ -1595,6 +1650,8 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 							}
 							return;
 						}
+						// Leaf node: toggle selection (select if not selected, deselect
+						// if already selected). Enter mirrors Space here.
 						var smEnter = treePanel.getSelectionModel && treePanel.getSelectionModel();
 						if (smEnter) {
 							if (e.shiftKey) {
@@ -1650,6 +1707,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 						return;
 					}
 
+					// Up / Down move between visible tree nodes (siblings).
 					if (key === 38 || key === 40) {
 						e.preventDefault();
 						e.stopPropagation();
@@ -4067,17 +4125,34 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 					maxWidth,
 					updateAria;
 
-				if (!dom || dom.leankorSplitterKeyboardBound || !lockedGrid) {
+				if (!dom || !lockedGrid) {
+					return;
+				}
+
+				// Keyboard divider tab-stop state. When the board is blank (no
+				// resources added) the divider must be SKIPPED by Tab — users
+				// reported Tab landing on the vertical divider in the empty state.
+				// tabindex="-1" removes it from the sequential Tab order while
+				// keeping it programmatically focusable, so the +-icon Right-arrow
+				// jump to the divider still works. With resources it is a normal
+				// tabindex="0" tab stop. focusable stays true in BOTH cases so
+				// ExtJS's focus manager does not bounce the Right-arrow focus().
+				// This sync runs on every apply() (rewire re-fires on layout /
+				// reconfigure / resize and when the resource count changes), even
+				// when the handlers below are already bound.
+				var rowStore = (lockedGrid.getStore && lockedGrid.getStore()) ||
+					(panel.getStore && panel.getStore());
+				var isBlank = !!(rowStore && rowStore.getCount &&
+					rowStore.getCount() === 0);
+				splitter.focusable = true;
+				splitter.tabIndex = isBlank ? -1 : 0;
+				dom.setAttribute("tabindex", isBlank ? "-1" : "0");
+
+				if (dom.leankorSplitterKeyboardBound) {
 					return;
 				}
 
 				dom.leankorSplitterKeyboardBound = true;
-				// Tell ExtJS this splitter is a real, focusable tab stop so the
-				// FocusManager / focusableContainer logic agrees with the DOM
-				// tabindex instead of fighting it.
-				splitter.focusable = true;
-				splitter.tabIndex = 0;
-				dom.setAttribute("tabindex", "0");
 				maxWidth = function () {
 					var panelW = (panel.getWidth && panel.getWidth()) || window.innerWidth;
 
@@ -4106,10 +4181,47 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				dom.addEventListener("blur", function () {
 					dom.classList.remove("x-splitter-focus");
 				});
+				// First interactive control in the ControlHeader (Departments /
+				// Projects / shift / view / settings / period / search / popOut),
+				// in tab order. ComponentQuery returns matches in declaration
+				// order, which matches the rendered tab order. Mirrors the RU/RM
+				// board so Tab from the divider leads back into the header.
+				var firstHeaderControl = function () {
+					var header = Ext.ComponentQuery.query("controlheader")[0];
+					if (!header || !header.rendered) { return null; }
+					var items = header.query("combobox, button, textfield");
+					for (var i = 0; i < items.length; i++) {
+						var c = items[i];
+						if (c.rendered && c.isVisible(true) && !c.disabled &&
+							typeof c.focus === "function") {
+							return c;
+						}
+					}
+					return null;
+				};
 				dom.addEventListener("keydown", function (e) {
 					var key = e.keyCode,
 						newWidth;
 
+					// Tab forward → jump to the first header control, so the
+					// divider leads straight into the ControlHeader rather than
+					// continuing through the timeline/next panel.
+					if (key === 9 && !e.shiftKey) {
+						var skip = document.querySelector(".skip-link[data-cp-skip]");
+							if (skip) {
+								e.preventDefault();
+								e.stopPropagation();
+								skip.focus();
+								return;
+							}
+							var ctrl = firstHeaderControl();
+						if (ctrl) {
+							e.preventDefault();
+							e.stopPropagation();
+							ctrl.focus();
+						}
+						return;
+					}
 					if (key !== 36 && key !== 35) {
 						return;
 					}
@@ -4216,11 +4328,147 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		if (!dom.leankorSplitterKeyboardBound) {
 			this.wireSplitterKeyboard(board);
 		}
-		if (dom.getAttribute("tabindex") === null) {
+		// tabindex null (never wired) OR "-1" (blank board: the divider is
+		// intentionally kept out of the keyboard flow until resources exist)
+		// means it must not receive focus here.
+		var tabindex = dom.getAttribute("tabindex");
+		if (tabindex === null || tabindex === "-1") {
 			return false;
 		}
 		dom.focus();
 		return true;
+	},
+
+	// Make the panel's right-side (normal/timeline) horizontal scrollbar a
+	// keyboard tab stop and focus it. Mirrors resource-management's
+	// focusTimelineHScrollbar/focusScrollbar: after a timeline event node, the
+	// next Tab lands on the horizontal scroller (rather than skipping straight
+	// out of the panel). The scroller is only a tab stop when it's actually
+	// visible (.x-grid-scrollbar-visible with non-zero size); when the timeline
+	// fits without scrolling the helper returns false so the caller falls back
+	// to its previous exit path. returnEl is stored for the scrollbar's own
+	// Shift+Tab return (back to the event node). WCAG 2.1.1 Keyboard, 2.4.3
+	// Focus Order, 2.4.7 Focus Visible.
+	focusTimelineHScrollbar : function (panel, returnEl, forwardEl) {
+		var me = this,
+			bar = (panel && panel.normalScrollbar && panel.normalScrollbar.dom) || null,
+			panelDom,
+			bars,
+			rect;
+
+		if (!panel) {
+			return false;
+		}
+
+		// Fallback: the normal (right) scrollbar follows the locked one in DOM
+		// order, so when the component property isn't exposed pick the last
+		// visible grid scrollbar inside the panel.
+		if (!bar) {
+			panelDom = panel.el && panel.el.dom;
+			bars = panelDom ?
+				panelDom.querySelectorAll(
+					".x-grid-scrollbar.x-scroller.x-grid-scrollbar-visible"
+				) :
+				[];
+			bar = bars.length ? bars[bars.length - 1] : null;
+		}
+
+		if (!bar || !bar.classList ||
+			!bar.classList.contains("x-grid-scrollbar-visible")) {
+			return false;
+		}
+
+		rect = bar.getBoundingClientRect();
+		if (rect.width === 0 && rect.height === 0) {
+			return false;
+		}
+
+		me.setKeyboardFocusMode(true);
+
+		if (!bar.hasAttribute("tabindex")) {
+			bar.setAttribute("tabindex", "0");
+		}
+		if (!bar.getAttribute("aria-label")) {
+			bar.setAttribute(
+				"aria-label",
+				(typeof Locale !== "undefined" &&
+					Locale.LocaleName &&
+					Locale.LocaleName.HorizontalScrollbar) ||
+					"Timeline horizontal scrollbar"
+			);
+		}
+		if (!bar.getAttribute("role")) {
+			bar.setAttribute("role", "scrollbar");
+		}
+		if (returnEl) {
+			bar.leankorScrollbarReturnEl = returnEl;
+		}
+
+		// JS-toggled focus-ring hook. The scroller is a synthetic Ext scroll
+		// element: relying on the bare :focus pseudo-class alone is unreliable
+		// for it (the ring can fail to paint when focus returns via native
+		// Shift+Tab, mirroring resource-management). Add an explicit class and
+		// re-add it on every focusin / remove on focusout so the keyboard ring
+		// is always present while the bar holds focus. The CSS rule that paints
+		// the ring lives in ganttCustomTheme all.scss
+		// (.x-grid-scrollbar.x-scroller.lk-scrollbar-keyboard-focus).
+		// WCAG 2.4.7 Focus Visible.
+		bar.classList.add("lk-scrollbar-keyboard-focus");
+		if (!bar.leankorScrollbarOutlineBound) {
+			bar.leankorScrollbarOutlineBound = true;
+			bar.addEventListener("focusin", function () {
+				bar.classList.add("lk-scrollbar-keyboard-focus");
+			});
+			bar.addEventListener("focusout", function () {
+				bar.classList.remove("lk-scrollbar-keyboard-focus");
+			});
+		}
+
+		// One-time Tab routing on the scrollbar: Shift+Tab returns to the event
+		// node we came from; plain Tab exits the panel forward (board divider,
+		// then the next focusable after the panel). Arrow keys are left to the
+		// browser so the user can still nudge the scroll position.
+		// Optional explicit forward (plain-Tab) target — used by the blank
+		// Capacity Planning board so the scroller hands off to the "Skip to main
+		// content" link instead of walking the default exit chain.
+		bar.leankorScrollbarForwardEl = forwardEl || null;
+		if (!bar.leankorScrollbarTabBound) {
+			bar.leankorScrollbarTabBound = true;
+			bar.addEventListener("keydown", function (e) {
+				var key = e.keyCode || e.which,
+					back;
+
+				if (key !== 9) {
+					return;
+				}
+				if (e.shiftKey) {
+					back = bar.leankorScrollbarReturnEl;
+					if (back && document.body.contains(back)) {
+						e.preventDefault();
+						e.stopPropagation();
+						back.setAttribute("tabindex", "0");
+						back.focus();
+					}
+					return;
+				}
+				var fwd = bar.leankorScrollbarForwardEl;
+					if (fwd && document.body.contains(fwd)) {
+						e.preventDefault();
+						e.stopPropagation();
+						if (fwd.focus) { fwd.focus(); }
+						return;
+					}
+					if (me.focusBoardSplitter(panel) ||
+					me.focusNextFocusableAfterPanel(panel) ||
+					me.focusFirstHeaderControl(panel)) {
+					e.preventDefault();
+					e.stopPropagation();
+				}
+			}, true);
+		}
+
+		bar.focus();
+		return document.activeElement === bar;
 	},
 
 	enableBoardFocus : function (panel) {
@@ -4731,11 +4979,25 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 
 		this.setKeyboardFocusMode(true);
 		this.clearFocusedRows();
-		Ext.defer(function () {
-			if (!button.ownerDocument || button.ownerDocument.body.contains(button)) {
+		// Retry the focus over a short window. When the skip link hands focus to
+		// the + icon, the board's own afterrender / focus-manager logic can grab
+		// focus back a tick later (an intermittent race — "worked yesterday, not
+		// today"). Re-focusing a few times, only while focus is NOT already on the
+		// button, makes it land reliably.
+		var attempts = 0;
+		var tryFocus = function () {
+			if (button.ownerDocument && !button.ownerDocument.body.contains(button)) {
+				return;
+			}
+			if (document.activeElement !== button) {
 				button.focus();
 			}
-		}, 1);
+			attempts += 1;
+			if (attempts < 6 && document.activeElement !== button) {
+				Ext.defer(tryFocus, 40);
+			}
+		};
+		Ext.defer(tryFocus, 1);
 		return true;
 	},
 
@@ -4882,7 +5144,10 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 		e.stopEvent();
 		if (e.shiftKey) {
 			this.focusLastGridRow(panel);
-		} else if (!this.focusNextFocusableAfterPanel(panel)) {
+		} else if (
+			!this.focusTimelineHScrollbar(panel, target) &&
+			!this.focusNextFocusableAfterPanel(panel)
+		) {
 			this.focusFirstHeaderControl(panel);
 		}
 		return false;
@@ -5184,8 +5449,17 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 							eventEl.setAttribute("tabindex", "-1");
 						}
 					} else {
-						handled = me.focusNextFocusableAfterPanel(panel) ||
+						// Plain Tab: first land on the panel's horizontal
+						// scroller (parallel-event -> scroller order requested
+						// for the Capacity Planning board), only exiting the
+						// panel once the scroller has been visited / is absent.
+						// WCAG 2.4.3 Focus Order.
+						handled = me.focusTimelineHScrollbar(panel, eventEl) ||
+							me.focusNextFocusableAfterPanel(panel) ||
 							me.focusFirstHeaderControl(panel);
+						if (handled) {
+							eventEl.setAttribute("tabindex", "-1");
+						}
 					}
 				} else if (
 					(key === 121 && event.shiftKey) ||
@@ -5230,7 +5504,14 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				return;
 			}
 
-			if (key !== 37 && key !== 39 && !(key === 9 && !event.shiftKey)) {
+			// Focus is NOT on an event node (it's on a left locked-grid row, the
+			// + icon, a header control, etc). Mirror resource-management's
+			// initTimelineBarNav: the ONLY key handled here is plain forward-Tab,
+			// which enters the timeline on the event parallel to the focused left
+			// row. Arrow keys (←/→/↑/↓) must be left entirely to the native
+			// component — on the left tree grid, Right=expand / Left=collapse a
+			// folder node, and intercepting them here broke that. WCAG 2.1.1.
+			if (!(key === 9 && !event.shiftKey)) {
 				return;
 			}
 
@@ -5244,7 +5525,9 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				rowRecord,
 				rowId;
 
-			if (key === 9 && (!lockedDom || !lockedDom.contains(target))) {
+			// Only intercept Tab when focus is genuinely inside the LEFT locked
+			// view — never the + icon / column header (their own handlers route).
+			if (!lockedDom || !lockedDom.contains(target)) {
 				return;
 			}
 
@@ -5255,17 +5538,18 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				rowEvents = allSorted;
 			}
 			if (!rowEvents.length) {
-				if (key === 9) {
-					if (me.focusNextFocusableAfterPanel(panel) ||
-						me.focusFirstHeaderControl(panel)) {
-						event.preventDefault();
-						event.stopPropagation();
-					}
+				// Empty timeline (no event nodes): still offer the horizontal
+				// scroller as the next tab stop when it's visible, else exit.
+				if (me.focusTimelineHScrollbar(panel, target) ||
+					me.focusNextFocusableAfterPanel(panel) ||
+					me.focusFirstHeaderControl(panel)) {
+					event.preventDefault();
+					event.stopPropagation();
 				}
 				return;
 			}
 
-			if (key !== 37 && lockedView && lockedView.getRecord && rowEl) {
+			if (lockedView && lockedView.getRecord && rowEl) {
 				rowRecord = lockedView.getRecord(rowEl);
 				rowId = rowRecord &&
 					((rowRecord.getId && rowRecord.getId()) ||
@@ -5278,9 +5562,7 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				}
 			}
 
-			focusEvent(targetEvent || (key === 37 ?
-				rowEvents[rowEvents.length - 1] :
-				rowEvents[0]));
+			focusEvent(targetEvent || rowEvents[0]);
 			event.preventDefault();
 			event.stopPropagation();
 		}, true);
@@ -5303,7 +5585,8 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 					event.preventDefault();
 					event.stopPropagation();
 				}
-			} else if (me.focusNextFocusableAfterPanel(panel) ||
+			} else if (me.focusTimelineHScrollbar(panel, target) ||
+				me.focusNextFocusableAfterPanel(panel) ||
 				me.focusFirstHeaderControl(panel)) {
 				event.preventDefault();
 				event.stopPropagation();

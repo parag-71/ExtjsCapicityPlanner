@@ -31,7 +31,7 @@ Ext.define('LeankorApp.view.AssignmentGrid', {
 	// highlightWeekends: true,
 	allowOverlap: false,
 	cls: 'backGroudCls',
-	ariaLabel: (typeof Locale !== 'undefined' && Locale.LocaleName && Locale.LocaleName.ResourceUtilization) || 'Assignment grid',
+	ariaLabel: (typeof Locale !== 'undefined' && Locale.LocaleName && Locale.LocaleName.CapacityPlanning) || 'Assignment grid',
 	// Easy to style each utilization bar individually with CSS or inline 'style'
 	utilizationBarRenderer : function (resourceUtilizationInfo, resource, intervalStartDate, intervalEndDate, metaData) {
 	if (resource.getName() === 'Bart') {
@@ -113,9 +113,9 @@ Ext.define('LeankorApp.view.AssignmentGrid', {
 		}
 		// addBtnTop is a keyboard-reachable activation point (tabindex/role/label).
 		me.getColumns()[0].setText(
-			'<span class="addBtnTop" name="addButton" tabindex="0" role="button" aria-label="' +
+			'<button class="addBtnTop" name="addButton" tabindex="0" role="button" aria-label="' +
 			Ext.htmlEncode((Locale.LocaleName && Locale.LocaleName.AddResource) || 'Add Resource') +
-			'"></span><span style="margin-left: 10px">' + Ext.htmlEncode(Locale.LocaleName.Name) + '</span>'
+			'"></button><span style="margin-left: 10px">' + Ext.htmlEncode(Locale.LocaleName.Name) + '</span>'
 		);
 		me.tip = new LeankorApp.view.AssignmentToolTip({
 				target: me.getSchedulingView().el,
@@ -130,11 +130,14 @@ Ext.define('LeankorApp.view.AssignmentGrid', {
 		// Grid structural ARIA (roles + aria-row/colindex), kept in sync on change.
 		LeankorApp.util.AccessibilityUtil.wireGridAriaIndices(me);
 		// Keyboard nav — ↑/↓ rows, Home/End, and ←/→ expand/collapse of tree
-		// branches. Bound on the panel; focus + the arrow handler live on the NAME
-		// COLUMN (locked tree grid). We intentionally do NOT call enableBoardFocus:
-		// it routes row focus to the timeline view, which is what made ←/→ require
-		// two presses and the border jump. Announces each row for screen readers.
-		LeankorApp.util.AccessibilityUtil.initGridKeyboardNavigation(me, {
+		// branches. Bind to the LOCKED grid (the NAME COLUMN), NOT the panel:
+		// me.getView() resolves to the scheduling (timeline) view, so binding to
+		// the panel routed row focus to the timeline and let the locked grid's own
+		// framework nav fire too (focus jumping right + arrows moving two rows). The
+		// locked grid view keeps focus and arrow handling in the name column only.
+		// We still do NOT call enableBoardFocus (it also wires the normal/timeline
+		// grid). Announces each row for screen readers.
+		LeankorApp.util.AccessibilityUtil.initGridKeyboardNavigation(me.lockedGrid || me, {
 			announceRowFn: function (record, idx, total) {
 				var name = '';
 				if (record.isSurrogateResource && record.isSurrogateResource()) {
@@ -153,20 +156,45 @@ Ext.define('LeankorApp.view.AssignmentGrid', {
 		// Keyboard-resize the divider between the tree grid and the chart.
 		LeankorApp.util.AccessibilityUtil.wireSplitterKeyboard(me);
 
-		// Collapse the timeline to a single tab stop (RU/CP have no event bars).
+		// WCAG 2.1.1 Keyboard / 2.4.3 Focus Order — make the utilization
+		// timeline keyboard-navigable on the Capacity Planning board. The
+		// timeline INTERVAL nodes (.gnt-resource-utilization-interval) become
+		// roving tab stops (role/aria-label/tabindex managed by syncPanel ->
+		// syncSchedulingView), and bindSchedulingView wires the shared
+		// event-navigation handler so:
+		//   left grid row  --Tab-->  parallel interval node in the same row
+		//   interval node  --Tab-->  timeline horizontal scroller
+		//   scroller       --Tab-->  exit the panel
+		// (← / → within a row, ↑ / ↓ across rows, Home/End, Esc -> parallel
+		// locked-grid row). This is the assignmentgridpanel equivalent of the
+		// resource-management board's initTimelineBarNav wiring. We intentionally
+		// do NOT call enableBoardFocus here — that would also wire the normal
+		// (timeline) grid's row arrow-nav / row focus ring, which must stay off
+		// so the focus indicator lives on the individual interval node, not a
+		// whole timeline row. bindSchedulingView / syncPanel self-guard against
+		// double-binding, so re-renders are safe.
+		var a11y = LeankorApp.util.AccessibilityUtil;
 		var schedView = (typeof me.getSchedulingView === 'function') ? me.getSchedulingView() : null;
 		var schedDom = schedView && schedView.el && schedView.el.dom;
-		if (schedDom && Ext.isFunction(LeankorApp.util.AccessibilityUtil.neutralizeTimelineTabStops)) {
-			var neutralize = function () {
-				LeankorApp.util.AccessibilityUtil.neutralizeTimelineTabStops(schedDom);
+		if (schedView && schedDom) {
+			if (Ext.isFunction(a11y.bindSchedulingView) && !schedDom._cpTimelineNavBound) {
+				schedDom._cpTimelineNavBound = true;
+				a11y.bindSchedulingView(me, schedView);
+			}
+			var syncTimeline = function () {
+				if (Ext.isFunction(a11y.syncPanel)) {
+					a11y.syncPanel(me);
+				} else if (Ext.isFunction(a11y.neutralizeTimelineTabStops)) {
+					a11y.neutralizeTimelineTabStops(schedDom);
+				}
 			};
-			Ext.defer(neutralize, 200);
+			Ext.defer(syncTimeline, 200);
 			var st = me.getStore && me.getStore();
 			if (st) {
-				st.on('refresh', neutralize);
-				st.on('datachanged', neutralize);
+				st.on('refresh', syncTimeline);
+				st.on('datachanged', syncTimeline);
 			}
-			if (typeof schedView.on === 'function') { schedView.on('refresh', neutralize); }
+			if (typeof schedView.on === 'function') { schedView.on('refresh', syncTimeline); }
 		}
 
 		// Tab routing: popOut → + icon → first NAME-COLUMN row → right panel.
@@ -209,6 +237,19 @@ Ext.define('LeankorApp.view.AssignmentGrid', {
 				addBtn.click();
 				return;
 			}
+			// Right arrow → focus the vertical splitter (resize divider),
+			// matching the RU/RM board. From the splitter, Tab returns to the
+			// header's first control (wired in wireSplitterKeyboard).
+			if (evt.keyCode === 39) {
+				var splitter = me.down && me.down('splitter');
+				var splitterDom = splitter && splitter.el && splitter.el.dom;
+				if (splitterDom) {
+					evt.preventDefault();
+					evt.stopPropagation();
+					splitterDom.focus();
+				}
+				return;
+			}
 			if (evt.keyCode !== 9) { return; }
 			if (evt.shiftKey) {
 				var popOut = Ext.ComponentQuery.query('[reference=popOut]')[0];
@@ -226,7 +267,17 @@ Ext.define('LeankorApp.view.AssignmentGrid', {
 				moved = LeankorApp.util.AccessibilityUtil.focusFirstGridRow(me);
 			}
 			if (!moved) {
-				var partner = Ext.ComponentQuery.query('[xtype=resourceschedule]')[0];
+				// Blank board (no resource rows): there is nothing meaningful to
+				// Tab through (no rows, empty timeline), so send focus straight to
+				// the "Skip to main content" link in a single Tab instead of
+				// stepping through the empty timeline body. Falls through to the
+				// partner panel only when the skip link is absent.
+				var skipLink = document.querySelector('.skip-link[data-cp-skip]');
+				if (skipLink) {
+					skipLink.focus();
+					moved = (document.activeElement === skipLink);
+				}
+				var partner = !moved && Ext.ComponentQuery.query('[xtype=resourceschedule]')[0];
 				if (partner && partner.isVisible && partner.isVisible(true)) {
 					if (typeof partner.focus === 'function') {
 						partner.focus();

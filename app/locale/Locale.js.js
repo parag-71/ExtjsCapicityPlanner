@@ -266,6 +266,8 @@ Ext.define('Locale', {
         FolderCollapsed: '{0}, collapsed',
         SkipToMain: 'Skip to main content',
         ResizeDividerLabel: 'Resize divider',
+        HorizontalScrollbar: 'Timeline horizontal scrollbar',
+        BoardDividerLabel    : 'Board divider. Tab to enter the board below.',
         ColumnWidthMessage: 'Width {0} pixels',
         Risk: 'Risk',
         RiskMitigation: 'Risk Mitigation',
@@ -287,6 +289,7 @@ Ext.define('Locale', {
         SearchByName: 'Search by Name',
         SearchForUser: 'Search for user',
         SelcetPB: 'Select Project Board',
+        Settings: 'Settings',
         SelectLbl: 'Select ',
         SelectAccFirst: 'Select Account first.',
         SelectAccount: 'Select Account',
@@ -427,5 +430,6 @@ Ext.define('Locale', {
 		Letter : 'Letter',
 		Legal : 'Legal',
 		A3 : 'A3',
+        OpenInNewTab: 'Open in a new tab',
     }
 });

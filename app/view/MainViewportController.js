@@ -38,6 +38,10 @@ Ext.define('LeankorApp.view.MainViewportController', {
         },
         'combo[reference=settingCheck]': {
             select: 'onSettingCheck',
+            // Show the same hover tooltip as the "Show" (viewChange) combo.
+            // onViewAfterRender is generic -- it just builds a tooltip from the
+            // combo's emptyText (here Locale.LocaleName.Settings).
+            afterrender: 'onViewAfterRender',
         },
         'combo[reference=departmentFilter]': {
             select: 'onDepartmentFilter',
@@ -1280,7 +1284,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
                           'outline-offset: 2px !important;',
                         '}',
                         '.x-print-field-cls .x-form-cb-input:focus {',
-                          'outline: 2px solid rgb(0, 120, 215) !important;',
+                          'outline: 2px solid #008cdd !important;',
                           'outline-offset: 2px !important;',
                         '}',
                     ].join(' ');
@@ -1296,7 +1300,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 Ext.Array.forEach(activeDialogue.form.items.items, function (item, index) {
                     var field = item.name;
                     // a11y: tag combo picker so SCSS can draw a keyboard-focus border
-                    // on the currently navigated item. Picker is created lazily, soBug_180
+                    // on the currently navigated item. Picker is created lazily, so
                     // attach on first expand. Skips non-combo fields (DPI, showHeader).
                     if (item.getPicker) {
                         item.on('expand', function (cmp) {
@@ -1728,15 +1732,38 @@ Ext.define('LeankorApp.view.MainViewportController', {
      *@param eOpts Method List for this combobox
      *@Description method is used to perform any action according to option selected from setting combobox
      */
-  onDepartmentFilter: function (combo, records, eOpts) {
+    onDepartmentFilter: function (combo, records, eOpts) {
     _LOG && console.log('onDepartmentFilter');
 
     var ganttPanel = LeankorApp.Gantt.gantt,
         meMain = this,
-        value = combo.getValue();
+        value = combo.getValue(),
+        selectedRecord = records && records[0],
+        selectedId = selectedRecord && selectedRecord.get && selectedRecord.get('id'),
+        localizedResourceTypes = Ext.htmlEncode(Locale.LocaleName.ByResourceTypes);
 
     switch (value) {
+        case "resourceTypes":
         case "By Resource Types":
+        case localizedResourceTypes:
+            if (selectedId && selectedId !== 1 && selectedId !== '1') {
+                break;
+            }
+            // Reentrancy guard: at >100% zoom the Enter that picks this option from
+            // the keyboard-navigated View dropdown is slower to settle while the
+            // popup renders and grabs focus, so the still-down/auto-repeating key
+            // can re-fire this handler (the same "Enter bleed" hazard handled in
+            // restoreResourceGridCloseFocus) and open a second identical popup.
+            // Bail if a Resource Type popup is already open.
+            if (Ext.ComponentQuery.query('#userListGrid').filter(function (cmp) {
+                    return cmp.isVisible && cmp.isVisible();
+                }).length) {
+                if (combo && !combo.destroyed) {
+                    combo.reset();
+                }
+                break;
+            }
+
             resourceAssignment.count = 0;
             resourceAssignment.offset = 0;
             Ext.getStore('pagingStoreOwner').removeAll();
@@ -1761,103 +1788,6 @@ Ext.define('LeankorApp.view.MainViewportController', {
                     if (combo && !combo.destroyed) {
                         combo.reset();
                     }
-                },
-
-                makeCloseToolFocusable = function (popup) {
-    Ext.defer(function () {
-        var closeToolCmp,
-            closeToolEl,
-            closeToolImg;
-
-        if (!popup || popup.destroyed || !popup.el) {
-            return;
-        }
-
-        closeToolCmp = popup.down('tool[type=close]');
-        closeToolEl = closeToolCmp && closeToolCmp.el;
-        closeToolImg = closeToolEl && closeToolEl.down('.x-tool-img');
-
-        if (closeToolEl && closeToolEl.dom) {
-            closeToolEl.dom.setAttribute('tabindex', '0');
-            closeToolEl.dom.setAttribute('role', 'button');
-            closeToolEl.dom.setAttribute('aria-label', Ext.htmlEncode(Locale.LocaleName.CloseDialog));
-        }
-
-        if (closeToolImg && closeToolImg.dom) {
-            closeToolImg.dom.setAttribute('tabindex', '0');
-            closeToolImg.dom.setAttribute('role', 'button');
-            closeToolImg.dom.setAttribute('aria-label', Ext.htmlEncode(Locale.LocaleName.CloseDialog));
-        }
-    }, 100);
-};
-                bindCloseToolKeyboard = function (popup) {
-                    var keyHandler;
-
-                    if (!popup || popup._resourceCloseToolKeyBound) {
-                        return;
-                    }
-
-                    popup._resourceCloseToolKeyBound = true;
-
-                   keyHandler = function (e) {
-    var key = e.keyCode || e.which,
-        activeEl = document.activeElement,
-        closeToolEl,
-        closeToolCmp,
-        activeCloseTool;
-
-    if (!popup || popup.destroyed || popup.destroying || !popup.el) {
-        return;
-    }
-
-    closeToolCmp = popup.down('tool[type=close]');
-    closeToolEl = closeToolCmp && closeToolCmp.el;
-
-    activeCloseTool = false;
-
-    if (closeToolEl && closeToolEl.dom && activeEl) {
-        var headerCmp = (closeToolCmp && closeToolCmp.ownerCt) ||
-                (popup.getHeader && popup.getHeader()),
-            headerDom = headerCmp && headerCmp.el && headerCmp.el.dom;
-
-        activeCloseTool =
-            closeToolEl.dom === activeEl ||
-            closeToolEl.dom.contains(activeEl) ||
-            !!Ext.fly(activeEl).up('.x-tool-close', popup.el, true) ||
-            !!Ext.fly(activeEl).up('.x-tool', popup.el, true) ||
-            // First-focus case: the header is a FocusableContainer, so DOM focus
-            // can sit on the header itself (the X only becomes activeElement after
-            // tabbing). The header has nothing actionable except the close tool, so
-            // Enter/Space while focus is anywhere in it closes the popup.
-            !!(headerDom && (headerDom === activeEl || headerDom.contains(activeEl)));
-    }
-
-    if (key === 27) {
-        e.preventDefault();
-        e.stopPropagation();
-        popup.close();
-        return false;
-    }
-
-    if (
-        activeCloseTool &&
-        (
-            key === 13 ||
-            key === 32
-        )
-    ) {
-        e.preventDefault();
-        e.stopPropagation();
-        popup.close();
-        return false;
-    }
-};
-
-                    document.addEventListener('keydown', keyHandler, true);
-
-                    popup.on('destroy', function () {
-                        document.removeEventListener('keydown', keyHandler, true);
-                    });
                 };
 
             meMain.popup = Ext.create('Ext.grid.Panel', {
@@ -1887,14 +1817,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 }],
 
                 listeners: {
-                    close: clearDepartmentPopup,
-                    afterrender: function (popup) {
-                        makeCloseToolFocusable(popup);
-                        bindCloseToolKeyboard(popup);
-                    },
-                    show: function (popup) {
-                        makeCloseToolFocusable(popup);
-                    }
+                    close: clearDepartmentPopup
                 },
 
                 dockedItems: [{
@@ -1958,8 +1881,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
                     items: [{
                         iconAlign: 'left',
                         iconCls: 'icon-previous',
-                        tooltip: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
-                        ariaLabel: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
+                        ariaLabel:'Previous',
                         disabled: true,
                         height: '22px',
                         style: 'padding : 0px 7px !important',
@@ -2039,8 +1961,6 @@ Ext.define('LeankorApp.view.MainViewportController', {
                     }, '->', {
                         iconAlign: 'right',
                         iconCls: 'icon-next',
-                        tooltip: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
-                        ariaLabel: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
                         disabled: true,
                         height: '22px',
                         itemId: 'userGridNextButton',
@@ -2092,13 +2012,13 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 }]
             });
 
-            LeankorApp.util.AccessibilityUtil.decoratePopup(meMain.popup);
+            this.updatePopupOverflow(meMain.popup);
             meMain.popup.showBy(combo, 'br');
-            LeankorApp.util.AccessibilityUtil.initPopupKeyboardNav(meMain.popup, combo);
-            meMain.bindResourceGridCloseToolKeys(meMain.popup, combo);
-
-            makeCloseToolFocusable(meMain.popup);
-            bindCloseToolKeyboard(meMain.popup);
+            // Keyboard/ADA for this popup is wired through dedicated methods on
+            // this controller (focus trap, focusable close icon with a focus ring,
+            // Enter/Space-to-close). Self-contained on purpose — it does not use
+            // the shared AccessibilityUtil helpers.
+            meMain.setupResourceTypePopupA11y(meMain.popup, combo);
 
             combo.reset();
             break;
@@ -2192,6 +2112,576 @@ Ext.define('LeankorApp.view.MainViewportController', {
             break;
     }
 },
+
+    /**
+     *@method setupResourceTypePopupA11y
+     *@param popup the "By Resource Types" floating grid panel
+     *@param focusTarget the control to return focus to on close (the View combo)
+     *@Description Wires keyboard accessibility for the Resource Type popup using
+     * only methods defined on this controller: (1) a focus trap so Tab/Shift+Tab
+     * cycle within the popup, (2) a focusable close (x) icon that shows a focus
+     * ring, and (3) Enter/Space on the close icon (and Esc anywhere) closes the
+     * popup. Self-contained — it does not call the shared AccessibilityUtil
+     * helpers.
+     */
+    setupResourceTypePopupA11y: function (popup, focusTarget) {
+        var meMain = this;
+
+        if (!popup || popup.leankorRtA11yBound) {
+            return;
+        }
+        popup.leankorRtA11yBound = true;
+
+        var apply = function () {
+            if (!popup || popup.destroyed) {
+                return;
+            }
+            meMain.decorateResourceTypePopup(popup, focusTarget);
+            meMain.makeResourceTypePopupCloseFocusable(popup);
+            meMain.bindResourceTypePopupCloseKeys(popup);
+            meMain.trapResourceTypePopupFocus(popup);
+            meMain.bindResourceTypePopupPointerFocusMode(popup);
+            meMain.focusResourceTypePopupStart(popup);
+        };
+
+        if (popup.rendered) {
+            apply();
+        } else {
+            popup.on('afterrender', apply, null, { single: true });
+        }
+
+        // Flag the close as early as possible so the focus guard stops pulling
+        // focus back into a dialog that is going away, and hand focus to the
+        // opener (View combo).
+        popup.on('beforeclose', function () {
+            popup.leankorRtClosing = true;
+        });
+        popup.on('close', function () {
+            popup.leankorRtClosing = true;
+            meMain.restoreResourceTypePopupOpenerFocus(focusTarget);
+        });
+    },
+
+    /**
+     *@method decorateResourceTypePopup
+     *@Description Marks the popup as a modal dialog for assistive tech and stores
+     * the opener so focus can be restored on close. New method — no shared helper.
+     */
+    decorateResourceTypePopup: function (popup, focusTarget) {
+        var dom = popup && popup.el && popup.el.dom,
+            label = (Locale.LocaleName && Locale.LocaleName.ResourceType) || 'Resource Type';
+
+        popup.leankorRtOpener = focusTarget || null;
+
+        if (!dom) {
+            return;
+        }
+
+        dom.setAttribute('role', 'dialog');
+        dom.setAttribute('aria-modal', 'true');
+        dom.setAttribute('aria-label', String(label).replace(/<[^>]*>/g, ''));
+    },
+
+    /**
+     *@method getResourceTypePopupFocusEls
+     *@Description Ordered list of focusable DOM nodes inside the popup: search
+     * field, grid view, enabled/visible toolbar buttons, then the close (x) icon.
+     * Used by the focus trap and the initial-focus mover. New method — no shared
+     * helper.
+     */
+    getResourceTypePopupFocusEls: function (popup) {
+        var els = [],
+            field,
+            view,
+            viewDom,
+            closeEl;
+
+        if (!popup || !popup.el || !popup.el.dom) {
+            return els;
+        }
+
+        field = popup.down('textfield');
+        if (field && field.inputEl && field.inputEl.dom && field.isVisible(true)) {
+            els.push(field.inputEl.dom);
+        }
+
+        view = Ext.isFunction(popup.getView) ? popup.getView() : null;
+        if (view && view.el && view.el.dom) {
+            viewDom = view.el.dom;
+            if (!viewDom.hasAttribute('tabindex')) {
+                viewDom.setAttribute('tabindex', '0');
+            }
+            els.push(viewDom);
+        }
+
+        Ext.Array.forEach(popup.query('toolbar button'), function (btn) {
+            if (btn.el && btn.el.dom && !btn.disabled && btn.isVisible(true)) {
+                els.push(btn.el.dom);
+            }
+        });
+
+        closeEl = popup.leankorRtCloseEl && popup.leankorRtCloseEl.dom;
+        if (closeEl) {
+            els.push(closeEl);
+        }
+
+        return els;
+    },
+
+    /**
+     *@method focusResourceTypePopupGrid
+     *@param popup the resource-type floating grid panel
+     *@param targetEl the DOM node the focus trap is about to move focus to
+     *@Description If targetEl is the popup's grid view container, focus a real row
+     * cell through the grid's NavigationModel (preferring the selected record, else
+     * the first row) so the keyboard focus ring paints. Returns true when it
+     * handled the focus, false otherwise (caller then focuses targetEl directly).
+     *
+     * Why: the focus trap lists the grid view container as a single Tab stop and
+     * relied on ExtJS to delegate focus from the container into a cell. On a cold
+     * grid right after the first reload (store just loaded via the search field's
+     * Enter) that delegation does not run on the first Tab, so focus sits on the
+     * container — which is styled outline:none — and no row ring appears. Driving
+     * the navigation model makes the first row's ring show on the first Tab,
+     * matching the "+ Add" popup. New method — no shared helper.
+     */
+    focusResourceTypePopupGrid: function (popup, targetEl) {
+        var view = popup && !popup.destroyed && popup.getView && popup.getView(),
+            viewDom = view && view.el && view.el.dom,
+            nav = view && view.getNavigationModel && view.getNavigationModel(),
+            store = popup && popup.getStore && popup.getStore(),
+            selModel = popup && popup.getSelectionModel && popup.getSelectionModel(),
+            selection = selModel && selModel.getSelection && selModel.getSelection(),
+            record;
+
+        if (!viewDom || targetEl !== viewDom) {
+            return false;
+        }
+
+        // Tab is keyboard interaction — make sure the ring CSS (gated on
+        // body.lk-keyboard-focus-mode) is active before the cell takes focus.
+        if (Ext.getBody && Ext.getBody()) {
+            Ext.getBody().addCls('lk-keyboard-focus-mode');
+        }
+
+        record = (selection && selection[0]) ||
+            (store && store.getCount && store.getCount() ? store.getAt(0) : null);
+
+        if (record && nav && nav.setPosition) {
+            // setPosition(record, columnIndex) — focuses cell [record, 0], which
+            // paints the row ring. Do NOT pass further args: the later positional
+            // params are keyEvent / suppressEvent / preventNavigation, and a
+            // truthy preventNavigation would cancel the very focus we want.
+            nav.setPosition(record, 0);
+            return true;
+        }
+
+        return false;
+    },
+
+    /**
+     *@method makeResourceTypePopupCloseFocusable
+     *@Description Makes the popup close (x) tool keyboard-focusable (tabindex 0,
+     * role button, aria-label) and paints a focus ring while it has focus. The
+     * panel header is an ExtJS FocusableContainer that otherwise rolls focus off
+     * the tool, so its focusable-container behaviour is turned off here to keep
+     * focus (and the ring) on the icon itself. Enter/Space-to-close is handled by
+     * bindResourceTypePopupCloseKeys (document capture), since focus can still
+     * land on the header. New method — no shared helper.
+     */
+    makeResourceTypePopupCloseFocusable: function (popup) {
+        var closeTool = popup && popup.down ? popup.down('tool[type=close]') : null,
+            header = popup && popup.getHeader ? popup.getHeader() : null,
+            closeEl,
+            label = (Locale.LocaleName && Locale.LocaleName.CloseDialog) || 'Close';
+
+        // Stop the header from managing (and stealing) focus among its children so
+        // the close tool can hold focus directly.
+        if (header) {
+            header.focusableContainer = false;
+        }
+
+        if (!closeTool) {
+            return;
+        }
+
+        closeEl = closeTool.el;
+        if (!closeEl || !closeEl.dom) {
+            return;
+        }
+
+        popup.leankorRtCloseEl = closeEl;
+
+        closeTool.focusable = true;
+        closeEl.dom.setAttribute('tabindex', '0');
+        closeEl.dom.setAttribute('role', 'button');
+        closeEl.dom.setAttribute('aria-label', String(label).replace(/<[^>]*>/g, ''));
+        closeEl.dom.setAttribute('title', String(label).replace(/<[^>]*>/g, ''));
+
+        if (closeEl.dom.leankorRtCloseRingBound) {
+            return;
+        }
+        closeEl.dom.leankorRtCloseRingBound = true;
+
+        // Focus ring — applied inline so it does not depend on any global
+        // keyboard-mode class. #008cdd matches the app's keyboard-focus colour
+        // ($keyboard-focus-border-color).
+        closeEl.dom.addEventListener('focus', function () {
+            closeEl.dom.style.outline = '2px solid #008cdd';
+            closeEl.dom.style.outlineOffset = '-2px';
+        }, true);
+        closeEl.dom.addEventListener('blur', function () {
+            closeEl.dom.style.outline = '';
+            closeEl.dom.style.outlineOffset = '';
+        }, true);
+    },
+
+    /**
+     *@method bindResourceTypePopupCloseKeys
+     *@Description Document-level capture keydown for the popup: Esc closes from
+     * anywhere; Enter/Space closes when focus is on the close (x) tool OR anywhere
+     * in the panel header (the header is an ExtJS FocusableContainer, so DOM focus
+     * can sit on the header rather than the icon node). The listener is removed
+     * when the popup is destroyed. New method — no shared helper.
+     */
+    bindResourceTypePopupCloseKeys: function (popup) {
+        var keyHandler;
+
+        if (!popup || popup.leankorRtCloseKeysBound) {
+            return;
+        }
+        popup.leankorRtCloseKeysBound = true;
+
+        keyHandler = function (e) {
+            var key = e.keyCode || e.which,
+                active = document.activeElement,
+                closeTool,
+                closeEl,
+                header,
+                headerDom,
+                onClose;
+
+            if (!popup || popup.destroyed || popup.destroying || !popup.el) {
+                return;
+            }
+
+            if (key === 27) {
+                e.preventDefault();
+                if (e.stopImmediatePropagation) {
+                    e.stopImmediatePropagation();
+                } else {
+                    e.stopPropagation();
+                }
+                popup.close();
+                return;
+            }
+
+            if (key !== 13 && key !== 32) {
+                return;
+            }
+
+            closeTool = popup.down('tool[type=close]');
+            closeEl = closeTool && closeTool.el;
+            header = (closeTool && closeTool.ownerCt) || (popup.getHeader && popup.getHeader());
+            headerDom = header && header.el && header.el.dom;
+
+            onClose = !!(closeEl && closeEl.dom && active && (
+                closeEl.dom === active ||
+                closeEl.dom.contains(active) ||
+                !!Ext.fly(active).up('.x-tool', popup.el, true) ||
+                (headerDom && (headerDom === active || headerDom.contains(active)))
+            ));
+
+            if (onClose) {
+                e.preventDefault();
+                if (e.stopImmediatePropagation) {
+                    e.stopImmediatePropagation();
+                } else {
+                    e.stopPropagation();
+                }
+                popup.close();
+            }
+        };
+
+        document.addEventListener('keydown', keyHandler, true);
+        popup.on('destroy', function () {
+            document.removeEventListener('keydown', keyHandler, true);
+        });
+    },
+
+    /**
+     *@method bindResourceTypePopupPointerFocusMode
+     *@Description Keeps the resource-type popup's row focus ring keyboard-only.
+     * If the dialog was opened with Enter, the app can still be in keyboard focus
+     * mode when the user clicks a row; clear that mode and any row focus marker
+     * before Ext applies its mouse selection.
+     */
+    bindResourceTypePopupPointerFocusMode: function (popup) {
+        var pointerHandler;
+
+        if (!popup || popup.leankorRtPointerModeBound) {
+            return;
+        }
+        popup.leankorRtPointerModeBound = true;
+
+        pointerHandler = function () {
+            var body = Ext.getBody && Ext.getBody(),
+                view = popup && !popup.destroyed && popup.getView && popup.getView();
+
+            if (body) {
+                body.removeCls('lk-keyboard-focus-mode');
+            }
+            if (view && view.el) {
+                view.el.select('.lk-popup-row-focused').removeCls('lk-popup-row-focused');
+            }
+        };
+
+        if (popup.el) {
+            popup.el.on('mousedown', pointerHandler);
+            popup.el.on('touchstart', pointerHandler);
+        }
+
+        popup.on('destroy', function () {
+            if (popup.el) {
+                popup.el.un('mousedown', pointerHandler);
+                popup.el.un('touchstart', pointerHandler);
+            }
+        });
+    },
+
+    /**
+     *@method focusResourceTypePopupStart
+     *@Description Moves DOM focus to the first focusable node inside the popup so
+     * keyboard focus starts inside the dialog (as an ARIA modal should). Retries
+     * over a short window because the View combo lives in the header keyboard
+     * pipeline, which fires its own deferred focus calls when the popup opens — a
+     * single attempt loses that race and focus stays on / leaves via the combo.
+     * Each pass only acts if focus is still outside the popup. New method — no
+     * shared helper.
+     */
+    focusResourceTypePopupStart: function (popup) {
+        var meMain = this,
+            attempts = 0,
+            initialFocusApplied = false,
+            tryFocus = function () {
+                var pdom = popup && popup.el && popup.el.dom,
+                    els,
+                    active;
+
+                if (!popup || popup.destroyed || popup.destroying || popup.leankorRtClosing) {
+                    return;
+                }
+
+                if (pdom) {
+                    els = meMain.getResourceTypePopupFocusEls(popup);
+                    active = document.activeElement;
+                    if (els.length && els[0] && (!initialFocusApplied || !active || !pdom.contains(active))) {
+                        els[0].focus();
+                        initialFocusApplied = document.activeElement === els[0];
+                    }
+                }
+
+                attempts += 1;
+                if (attempts < 8) {
+                    Ext.defer(tryFocus, 40);
+                }
+            };
+
+        Ext.defer(tryFocus, 20);
+    },
+
+    /**
+     *@method trapResourceTypePopupFocus
+     *@Description ARIA modal focus trap for the popup. Two document-level capture
+     * listeners (both removed on destroy):
+     *  - keydown(Tab) gives a natural, direction-aware Tab order across the
+     *    popup's controls (search field -> grid -> toolbar buttons -> close icon),
+     *    wrapping at both ends;
+     *  - focusin is the real guard: whenever focus lands ANYWHERE outside the open
+     *    dialog — by Tab, by a programmatic .focus(), or because an ExtJS
+     *    FocusableContainer moved it — it is pulled straight back inside. This is
+     *    what makes the trap reliable against the framework's own focus handling.
+     * New method — no shared helper.
+     */
+    trapResourceTypePopupFocus: function (popup) {
+        var meMain = this,
+            tabHandler,
+            focusInHandler;
+
+        if (!popup || popup.leankorRtTrapBound) {
+            return;
+        }
+        popup.leankorRtTrapBound = true;
+
+        tabHandler = function (e) {
+            var pdom = popup && popup.el && popup.el.dom,
+                els,
+                active,
+                idx,
+                closeIdx,
+                i,
+                next;
+
+            if (e.keyCode !== 9) {
+                return;
+            }
+            if (!popup || popup.destroyed || popup.destroying || popup.leankorRtClosing || !pdom) {
+                return;
+            }
+
+            // Tab is keyboard interaction: re-enable keyboard-focus mode so the
+            // row / control focus ring is painted. A prior mouse click clears the
+            // mode (see bindResourceTypePopupPointerFocusMode); this handler is a
+            // document-level capture listener that stops propagation below, so the
+            // global modality detector never sees the Tab and cannot restore it.
+            // Mirror the pointer handler and re-add the class here, before focus
+            // moves, so the ring paints as soon as the next element is focused.
+            if (Ext.getBody && Ext.getBody()) {
+                Ext.getBody().addCls('lk-keyboard-focus-mode');
+            }
+
+            els = meMain.getResourceTypePopupFocusEls(popup);
+            active = document.activeElement;
+
+            // Focus is outside the popup — never let Tab carry it further away.
+            // Swallow the Tab and pull focus into the dialog (first control, or the
+            // dialog container itself as a last resort).
+            if (!active || !pdom.contains(active)) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (els.length && els[0]) {
+                    els[0].focus();
+                } else {
+                    if (!pdom.hasAttribute('tabindex')) {
+                        pdom.setAttribute('tabindex', '-1');
+                    }
+                    pdom.focus();
+                }
+                return;
+            }
+
+            if (!els.length) {
+                return;
+            }
+
+            idx = els.indexOf(active);
+            if (idx === -1) {
+                for (i = 0; i < els.length; i++) {
+                    if (els[i].contains && els[i].contains(active)) {
+                        idx = i;
+                        break;
+                    }
+                }
+            }
+
+            // Inside the popup but on an untracked node (typically the header) —
+            // treat it as the close icon's slot so Tab order stays natural.
+            if (idx === -1) {
+                closeIdx = popup.leankorRtCloseEl && popup.leankorRtCloseEl.dom ?
+                    els.indexOf(popup.leankorRtCloseEl.dom) : -1;
+                idx = closeIdx !== -1 ? closeIdx : 0;
+            }
+
+            next = e.shiftKey ? idx - 1 : idx + 1;
+            if (next < 0) {
+                next = els.length - 1;
+            }
+            if (next >= els.length) {
+                next = 0;
+            }
+
+            e.preventDefault();
+            e.stopPropagation();
+            // When the next stop is the grid, focus an actual row cell via the
+            // navigation model instead of the bare view container. Focusing the
+            // container relies on ExtJS to delegate focus into a cell, which on a
+            // cold first-reload grid does NOT happen on the first Tab — so no cell
+            // is focused and no keyboard focus ring paints (the container itself is
+            // styled outline:none). Driving the navigation model makes the first
+            // row's ring appear deterministically, matching the "+ Add" popup.
+            if (!meMain.focusResourceTypePopupGrid(popup, els[next])) {
+                els[next].focus();
+            }
+        };
+
+        focusInHandler = function (e) {
+            var pdom = popup && popup.el && popup.el.dom,
+                target = e && e.target,
+                els,
+                back;
+
+            if (!popup || popup.destroyed || popup.destroying || popup.leankorRtClosing || !pdom) {
+                return;
+            }
+
+            // Focus moved to a node inside the dialog — remember it and allow it.
+            if (target && pdom.contains(target)) {
+                popup.leankorRtLastFocus = target;
+                return;
+            }
+
+            // Focus escaped the modal dialog — bring it back. Prefer the last node
+            // that held focus inside; otherwise the first focusable control.
+            els = meMain.getResourceTypePopupFocusEls(popup);
+            if (!els.length) {
+                return;
+            }
+
+            back = (popup.leankorRtLastFocus &&
+                    pdom.contains(popup.leankorRtLastFocus) &&
+                    document.body.contains(popup.leankorRtLastFocus)) ?
+                popup.leankorRtLastFocus :
+                els[0];
+
+            if (e.stopPropagation) {
+                e.stopPropagation();
+            }
+            // Defer so we win against whatever just moved focus out.
+            Ext.defer(function () {
+                if (!popup || popup.destroyed || popup.destroying) {
+                    return;
+                }
+                if (back && document.body.contains(back)) {
+                    back.focus();
+                } else if (els[0] && document.body.contains(els[0])) {
+                    els[0].focus();
+                }
+            }, 0);
+        };
+
+        document.addEventListener('keydown', tabHandler, true);
+        document.addEventListener('focusin', focusInHandler, true);
+        popup.on('destroy', function () {
+            document.removeEventListener('keydown', tabHandler, true);
+            document.removeEventListener('focusin', focusInHandler, true);
+        });
+    },
+
+    /**
+     *@method restoreResourceTypePopupOpenerFocus
+     *@Description Returns focus to the opener (the View combo) after the popup
+     * closes. Deferred so it runs after the popup is torn down and ExtJS finishes
+     * its own focus shuffling, and retried once in case the first attempt is
+     * overridden. New method — no shared helper.
+     */
+    restoreResourceTypePopupOpenerFocus: function (focusTarget) {
+        var focusOpener = function () {
+            if (!focusTarget || focusTarget.destroyed) {
+                return;
+            }
+            if (Ext.isFunction(focusTarget.focus)) {
+                focusTarget.focus();
+            } else if (focusTarget.inputEl && focusTarget.inputEl.dom) {
+                focusTarget.inputEl.dom.focus();
+            } else if (focusTarget.el && focusTarget.el.dom) {
+                focusTarget.el.dom.focus();
+            }
+        };
+
+        Ext.defer(focusOpener, 50);
+        // A second pass after the close/destroy focus shuffle has fully settled.
+        Ext.defer(focusOpener, 200);
+    },
 
     /**
     @Method - getAllResources
@@ -2626,14 +3116,6 @@ Ext.define('LeankorApp.view.MainViewportController', {
             var value = Ext.ComponentQuery.query("#searchfilterfield")[0].getValue(),
                 regexp = new RegExp(Ext.String.escapeRegex(value), 'i')
             LeankorApp.Gantt.gantt.taskStore.resourceStore.filter('name', regexp);
-            var resourceStore = LeankorApp.Gantt.gantt.taskStore.resourceStore,
-                count = resourceStore.getCount(),
-                total = (typeof resourceStore.getTotalCount === 'function')
-                    ? resourceStore.getTotalCount()
-                    : (resourceStore.getData() && resourceStore.getData().getSource()
-                        ? resourceStore.getData().getSource().getCount()
-                        : count);
-            LeankorApp.util.AccessibilityUtil.announceFiltered(count, total || count);
         } else {
             LeankorApp.Gantt.gantt.taskStore.resourceStore.clearFilter();
         }
@@ -2968,8 +3450,6 @@ Ext.define('LeankorApp.view.MainViewportController', {
                 items: [{
                     iconAlign: 'left',
                     iconCls: 'icon-previous',
-                    tooltip: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
-                    ariaLabel: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
                     disabled: true,
                     height: '22px',
                     style: 'padding : 0px 7px !important',
@@ -3043,10 +3523,7 @@ Ext.define('LeankorApp.view.MainViewportController', {
 
                     iconAlign: 'right',
                     iconCls: 'icon-next',
-                    tooltip: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
-                    ariaLabel: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
-                    disabled: true,
-                    height: '22px',
+                    disabled: true,                    height: '22px',
                     itemId: 'userGridNextButton',
                     style: 'padding : 0px 7px !important',
                     handler: function () {
@@ -3086,13 +3563,33 @@ Ext.define('LeankorApp.view.MainViewportController', {
             ],
 
         });
+        // WCAG 1.4.10 reflow: this floating grid is NOT an Ext.window.Window, so
+        // the global window auto-fit override does not cover it. Without this, at
+        // high zoom the fixed-height popup can exceed the shrunken viewport and its
+        // docked bottom toolbar (the "Select" button) ends up off-screen with no
+        // way to scroll to it. decoratePopup caps the height to 90% of the viewport
+        // (Ext setMaxHeight -> grid view scrolls, docked toolbar stays pinned) and
+        // constrains it on-screen, re-applied on zoom/resize. Same helper the
+        // View-combo "By Resource Types" popup uses.
         LeankorApp.util.AccessibilityUtil.decoratePopup(meMain.popup);
+        this.updatePopupOverflow(meMain.popup);
         meMain.popup.showBy(column, 'br');
-        LeankorApp.util.AccessibilityUtil.initPopupKeyboardNav(meMain.popup, closeFocusTarget);
-        // Close on Enter/Space on the X tool (and Esc), in one press — same
-        // capture-phase handler the Resource Type popup uses. Without this, Enter
-        // on the focused close icon does not close the popup.
-        meMain.bindResourcePopupCloseKeys(meMain.popup);
+        // Mirror the View-combo "By Resource Types" popup EXACTLY. That popup uses
+        // the native ExtJS grid selection model for row navigation and Enter/Space
+        // selection (so highlighting a row with the arrow keys and pressing Enter
+        // selects it, and the Select button reads that selection), and layers on
+        // ONLY the self-contained a11y wiring: ARIA dialog attributes, a
+        // keyboard-focusable close (x) icon, a Tab focus-trap, Esc / Enter-on-close,
+        // and initial focus inside the dialog.
+        //
+        // The Add Resource popup previously stacked three custom handlers on top of
+        // the native model instead — initPopupKeyboardNav (which SELECTS the row on
+        // focus), bindResourcePopupCloseKeys, and a custom bindResourceGridCloseToolKeys
+        // row-keydown toggle. Those fought each other and the framework: navigation
+        // pre-selected the row, then the toggle saw it "already selected" and
+        // DESELECTED it on Enter, so the Select button got an empty selection.
+        // Reusing setupResourceTypePopupA11y makes both popups behave identically.
+        meMain.setupResourceTypePopupA11y(meMain.popup, closeFocusTarget);
 
     },
 
@@ -3143,14 +3640,22 @@ Ext.define('LeankorApp.view.MainViewportController', {
 
             if (key === 27) {
                 e.preventDefault();
-                e.stopPropagation();
+                if (e.stopImmediatePropagation) {
+                    e.stopImmediatePropagation();
+                } else {
+                    e.stopPropagation();
+                }
                 popup.close();
                 return false;
             }
 
             if (activeCloseTool && (key === 13 || key === 32)) {
                 e.preventDefault();
-                e.stopPropagation();
+                if (e.stopImmediatePropagation) {
+                    e.stopImmediatePropagation();
+                } else {
+                    e.stopPropagation();
+                }
                 popup.close();
                 return false;
             }

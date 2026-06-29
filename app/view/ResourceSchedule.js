@@ -253,8 +253,11 @@ Ext.define("LeankorApp.view.ResourceSchedule", {
 									kanbanUrl += (portfolio.VisualKanbanURL).replace('/', '') + '?Id=';
 									break;
 								}
-								var myURL = kanbanUrl + Ext.htmlEncode(eventRecord.data.ValueStreamID) + '&cardid=' + Ext.htmlEncode(eventRecord.data.ForceID);
-								window.open(LeankorApp.Gantt.sanitizeValue(myURL));
+								var myURL = kanbanUrl + Ext.htmlEncode(eventRecord.data.ValueStreamID) + '&cardid=' + Ext.htmlEncode(eventRecord.data.ForceID);																// WCAG 3.2.5 Change on Request — confirmation
+								// before context switch to a new tab.
+								LeankorApp.Gantt.confirmMsgBox(Locale.LocaleName.OpenInNewTabConfirmation, function (btn) {
+									if (btn === 'yes') { window.open(LeankorApp.Gantt.sanitizeValue(myURL)); }
+								});
 							}
 
 						}

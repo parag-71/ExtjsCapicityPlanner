@@ -106,21 +106,21 @@ Ext.define('LeankorApp.view.ControlHeader', {
 				tooltip: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan),
 				reference: 'shiftPrevious',
 				iconCls: 'icon-previous',
-				cls: 'toolbar-custom-btn',
+				cls: 'toolbar-custom-btn timespan-btn',
 				text: Ext.htmlEncode(Locale.LocaleName.PreviousTimespan)
 			}, {
 				xtype: 'button',
 				tooltip: Ext.htmlEncode(Locale.LocaleName.NextTimespan),
+				text:  Ext.htmlEncode(Locale.LocaleName.NextTimespan),
 				reference: 'shiftNext',
 				iconCls: 'icon-next',
-				cls: 'toolbar-custom-btn',
-				text: Ext.htmlEncode(Locale.LocaleName.NextTimespan)
+				cls: 'toolbar-custom-btn timespan-btn',
 			}, {
 				xtype: 'combo',
 				store: 'viewStore',
 				queryMode: 'local',
 				valueField: 'value',
-				cls: 'combo-custom-cls-period',
+				cls: 'combo-custom-cls-period combo-custom-show-tab-cls',
 				forceSelection: false,
 				editable: false,
 				listConfig: {
@@ -154,6 +154,7 @@ Ext.define('LeankorApp.view.ControlHeader', {
 				queryMode : 'local',
 				valueField : 'value',
 				cls : 'combo-custom-cls-setting',
+				emptyText : Locale.LocaleName.Settings,
 				forceSelection : false,
 				editable : false,
 				listConfig : {
@@ -180,7 +181,7 @@ Ext.define('LeankorApp.view.ControlHeader', {
 				store : 'monthStore',
 				queryMode : 'local',
 				valueField : 'value',
-				cls : 'combo-custom-cls-period',
+				cls : 'combo-custom-cls-period combo-custom-cls-period1',
 				listConfig : {
 					height: 'auto'
 				},
@@ -225,19 +226,10 @@ Ext.define('LeankorApp.view.ControlHeader', {
 				xtype : 'button',
 				reference : 'popOut',
 				iconCls : 'icon-zoom-to-fit',
-				tooltip : Ext.htmlEncode(Locale.LocaleName.ZoomToFit),
-				ariaLabel : Ext.htmlEncode(Locale.LocaleName.ZoomToFit),
+				tooltip: Ext.htmlEncode(Locale.LocaleName.OpenInNewTab),
+				ariaLabel: Ext.htmlEncode(Locale.LocaleName.OpenInNewTab),
 				cls : 'toolbar-custom-btn toolbar-popout-btn'
-			}, {
-				xtype : 'button',
-				reference : 'help',
-				iconCls : 'icon-help',
-				tooltip : Ext.htmlEncode((Locale.LocaleName && Locale.LocaleName.Help) || 'Help'),
-				ariaLabel : Ext.htmlEncode((Locale.LocaleName && Locale.LocaleName.Help) || 'Help'),
-				cls : 'toolbar-custom-btn',
-				hidden : true,
-				style : 'width : 40px !important;'
-			},
+			}
 
 		];
 
@@ -252,7 +244,13 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			cmp.focusable = true;
 			cmp.tabIndex = 0;
 			cmp.ariaLabel = me.getHeaderControlLabel(cmp);
-			cmp.cls = Ext.String.trim((cmp.cls || '') + ' lk-control-header-focusable');
+			// Shared `lk-header-item` (single-row alignment + rem text sizing) plus
+			// a unique `lk-header-<reference>` class per item so each header control
+			// can also be targeted individually. Styled in ganttCustomTheme all.scss.
+			cmp.cls = Ext.String.trim(
+				(cmp.cls || '') +
+				' lk-control-header-focusable lk-header-item' +
+				(cmp.reference ? ' lk-header-' + cmp.reference.toLowerCase() : ''));
 		});
 		me.on('afterrender', me.bindHeaderComboKeys, me, {
 			single : true
@@ -322,12 +320,39 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			return;
 		}
 
-		if (
-			active &&
-			active !== document.body &&
-			active !== document.documentElement &&
-			active !== document &&
-			active !== window) {
+		// Send the first forward Tab to the first header control whenever focus is
+		// not already inside the header. On reload the Bryntum timeline/chart holds
+		// focus (or one of its many tabbable cells does), so the old body-only check
+		// never fired and Tab walked ~25 invisible chart tab stops before any focus
+		// indicator appeared near the "+" icon instead of at the top.
+		if (active && this.el.dom.contains(active)) {
+			return;
+		}
+
+		// Never hijack the first Tab while a popup/dialog is open (the Resource Type
+		// grid, Role Hierarchy tree, Project filter, or "+ Add" grid). Those modals
+		// own their own focus trap. On first reload this redirect can still be armed
+		// (leankorInitialHeaderFocusDone === false) when such a popup is opened from
+		// the keyboard, because it only disarms on a Tab made while focus is in the
+		// chart/body — which need not happen before the popup opens. Two checks:
+		//   1) focus currently sits inside a floating component, or
+		//   2) a modal floater is open even though focus has drifted to <body> — e.g.
+		//      pressing Enter in the popup's search field reloads the store and the
+		//      grid refresh blurs the field, so by the next Tab activeElement is body.
+		// Without this the first Tab is redirected to the header and focus leaves the
+		// dialog.
+		activeCmp = active && Ext.Component.fromElement && Ext.Component.fromElement(active);
+		while (activeCmp) {
+			if (activeCmp.floating) {
+				return;
+			}
+			activeCmp = activeCmp.ownerCt || activeCmp.floatParent;
+		}
+
+		activeFloater = Ext.WindowManager &&
+			Ext.WindowManager.getActive &&
+			Ext.WindowManager.getActive();
+		if (activeFloater && activeFloater.modal) {
 			return;
 		}
 
@@ -668,6 +693,24 @@ Ext.define('LeankorApp.view.ControlHeader', {
 	bindHeaderComboKeys : function () {
 		this.syncHeaderControlAriaLabels();
 
+		Ext.Array.forEach(this.query("field"), function (field) {
+			if (!field.el || !field.el.dom) {
+				return;
+			}
+
+			var root = field.el.dom,
+				tables = Ext.Array.toArray(root.querySelectorAll("table"));
+
+			if (root.tagName === "TABLE") {
+				tables.push(root);
+			}
+
+			Ext.Array.each(tables, function (tbl) {
+				tbl.removeAttribute("aria-label");
+				tbl.setAttribute("role", "presentation");
+			});
+		});
+
 		Ext.Array.forEach(
 			this.query("combo"),
 			function (combo) {
@@ -757,6 +800,26 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			return;
 		}
 
+		if (combo.reference === "settingCheck") {
+			// No option should look focused when the settings menu opens, but the
+			// border must still appear during keyboard navigation. The only
+			// reliable way to get a bordered arrow-nav is to put DOM focus ON a
+			// list item (which activates onHeaderViewComboListKeyDown). If focus
+			// stays on the combo input instead, the native Picker keyNav eats
+			// Up/Down and only moves .x-boundlist-item-over -- a class the
+			// settings-combo CSS intentionally does NOT border -- so no border
+			// ever shows. So: focus the first option, but SUPPRESS its border
+			// until the user actually navigates. leankorSuppressFocusBorder is
+			// honoured by focusHeaderViewComboList + the list focusin handler
+			// (no border drawn) and cleared by the first arrow/Home/End press in
+			// onHeaderViewComboListKeyDown (which reveals the border then).
+			combo.leankorSuppressFocusBorder = true;
+			Ext.defer(function () {
+				me.focusHeaderViewComboList(combo);
+			}, 1);
+			return;
+		}
+
 		Ext.defer(function () {
 			me.focusHeaderViewComboList(combo);
 		}, 1);
@@ -817,6 +880,12 @@ Ext.define('LeankorApp.view.ControlHeader', {
 						}
 						return;
 					}
+					if (combo.leankorSuppressFocusBorder) {
+						// Menu just opened: focus is on the first item for keyboard
+						// nav, but the border stays hidden until the user navigates.
+						Ext.fly(target).removeCls("x-boundlist-item-focused");
+						return;
+					}
 					Ext.fly(target).addCls("x-boundlist-item-focused");
 				},
 				this,
@@ -866,20 +935,16 @@ Ext.define('LeankorApp.view.ControlHeader', {
 				{
 					delegate: ".x-boundlist-item"
 				});
-			listEl.on(
-				"mouseover",
-				clearSettingPointerFocus,
-				this,
-				{
-					delegate: ".x-boundlist-item"
-				});
-			listEl.on(
-				"mousemove",
-				clearSettingPointerFocus,
-				this,
-				{
-					delegate: ".x-boundlist-item"
-				});
+			// NOTE: clearSettingPointerFocus is intentionally NOT bound to the
+			// passive hover events ("mouseover"/"mousemove"). It is destructive --
+			// it clears lk-keyboard-focus-mode, blurs the element and strips every
+			// item's tabindex. Firing it on mere hover destroyed the keyboard
+			// focus while the user was navigating with the arrow keys, so a
+			// following Enter/Space no longer landed on the focused option (e.g.
+			// "Zoom to Fit"/"Today") and ExtJS selected the moused-over record
+			// instead, always opening Print. Keyboard focus and pointer hover must
+			// coexist; the switch to pointer mode happens on real interaction
+			// (mousedown/touchstart/click) below, not on passive hover.
 			listEl.on(
 				"touchstart",
 				clearSettingPointerFocus,
@@ -909,7 +974,8 @@ Ext.define('LeankorApp.view.ControlHeader', {
 		}
 	},
 	onHeaderViewComboListKeyDown: function (combo, picker, e, target) {
-		var key = e.getKey && e.getKey(),
+		var me = this,
+		key = e.getKey && e.getKey(),
 		tabKey = Ext.event.Event.TAB || 9,
 		enterKey = Ext.event.Event.ENTER || 13,
 		spaceKey = Ext.event.Event.SPACE || 32,
@@ -930,7 +996,23 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			Ext.fly(el).addCls("x-boundlist-item-focused");
 			el.setAttribute("tabindex", "0");
 			el.focus();
+			// Keep the ExtJS BoundList "active" item in step with keyboard focus
+			// so a native Enter/Space (selectHighlighted) hits this same option.
+			me.syncHeaderViewComboActiveItem(combo, el);
 		};
+
+		if (
+			combo.leankorSuppressFocusBorder &&
+			(key === downKey || key === upKey || key === homeKey || key === endKey)) {
+			// The menu opened with focus on the first item but no visible border.
+			// This first navigation REVEALS the border (Down/Home -> first option,
+			// Up/End -> last) rather than advancing past it, then clears the flag
+			// so every later arrow behaves normally via focusItemAt.
+			combo.leankorSuppressFocusBorder = false;
+			e.stopEvent();
+			focusItemAt(key === upKey || key === endKey ? count - 1 : 0);
+			return;
+		}
 
 		if (key === enterKey || key === spaceKey) {
 			e.stopEvent();
@@ -974,14 +1056,16 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			return;
 		}
 
-		if (e.shiftKey) {
+		if (e.shiftKey && index <= 0) {
+			// Shift+Tab off the first option: close the list and move to the
+			// PREVIOUS header control (not back onto the same combo icon).
 			e.stopEvent();
 			combo.leankorSkipRestoreFocus = true;
 			combo.collapse();
 			if (!this.focusPreviousHeaderControl(combo)) {
 				this.restoreHeaderControlFocus(combo);
 			}
-		} else if (!e.shiftKey) {
+		} else if (!e.shiftKey && index === (items || []).length - 1) {
 			e.stopEvent();
 			combo.leankorSkipRestoreFocus = true;
 			combo.collapse();
@@ -1052,22 +1136,101 @@ Ext.define('LeankorApp.view.ControlHeader', {
 
 		this.activateHeaderViewComboItem(combo, picker, target);
 	},
-	focusHeaderViewComboList: function (combo) {
+	// Move keyboard focus into the open list. position "last" focuses the final
+	// option (used when entering the list with the Up arrow); anything else
+	// (default) focuses the first option.
+	focusHeaderViewComboList: function (combo, position) {
 		var me = this;
 
 		Ext.defer(function () {
 			var picker = combo && combo.getPicker && combo.getPicker(),
-			firstItem;
+			items,
+			targetItem;
 
 			me.syncHeaderViewComboList(combo);
-			firstItem = picker && picker.el && picker.el.down(".x-boundlist-item");
-			if (firstItem && firstItem.dom) {
+			items = picker && picker.el && picker.el.select(".x-boundlist-item").elements;
+			targetItem =
+				items &&
+				items.length &&
+				(position === "last" ? items[items.length - 1] : items[0]);
+			if (targetItem) {
 				picker.el.select(".x-boundlist-item-focused").removeCls("x-boundlist-item-focused");
-				firstItem.addCls("x-boundlist-item-focused");
-				firstItem.dom.setAttribute("tabindex", "0");
-				firstItem.dom.focus();
+				if (combo.leankorSuppressFocusBorder) {
+					// Opening: focus the item (so arrow-nav works) but draw no
+					// highlight at all -- no focus border and no -over background.
+					picker.el.select(".x-boundlist-item-over").removeCls("x-boundlist-item-over");
+					targetItem.setAttribute("tabindex", "0");
+					targetItem.focus();
+				} else {
+					Ext.fly(targetItem).addCls("x-boundlist-item-focused");
+					targetItem.setAttribute("tabindex", "0");
+					targetItem.focus();
+					// Make the focused option the REAL ExtJS active item, not just
+					// the visually-focused one -- otherwise the nav model keeps the
+					// stale highlight the mouse opened over (e.g. Print) and a
+					// native Enter/Space executes that instead of the focused one.
+					me.syncHeaderViewComboActiveItem(combo, targetItem);
+				}
 			}
 		}, 25);
+	},
+	// Keep the ExtJS BoundList "active" item (navigation model + hover
+	// highlight) in lock-step with the keyboard-focused option. Without this the
+	// nav model holds a stale highlight -- typically the row the mouse opened
+	// over (Print) -- so ExtJS's native Enter/Space (selectHighlighted) and the
+	// visible focus border disagree and the wrong option fires. The record is
+	// resolved from the actual rendered node, so it stays correct under the
+	// custom tpl that hides ids 8/9 (hidden rows are never rendered as
+	// .x-boundlist-item). Skipped for viewChange, which intentionally drives
+	// selection through native combo behavior.
+	syncHeaderViewComboActiveItem: function (combo, itemDom) {
+		var picker = combo && combo.getPicker && combo.getPicker(),
+		listEl = picker && picker.el,
+		firstEl,
+		record,
+		nav;
+
+		if (!combo || combo.reference === "viewChange") {
+			return;
+		}
+		if (!picker || !listEl || !listEl.dom) {
+			return;
+		}
+
+		if (!itemDom) {
+			firstEl = listEl.down(".x-boundlist-item");
+			itemDom = firstEl && firstEl.dom;
+		}
+		if (!itemDom) {
+			return;
+		}
+
+		record = picker.getRecord && picker.getRecord(itemDom);
+		if (!record) {
+			return;
+		}
+
+		// Drop the stale hover/highlight left on another row (e.g. Print under
+		// the pointer) so the ExtJS "active" item matches the focused one.
+		if (picker.clearHighlight) {
+			picker.clearHighlight();
+		}
+		listEl.select(".x-boundlist-item-over").removeCls("x-boundlist-item-over");
+
+		// Point the navigation model at the same record. This is what ExtJS's
+		// native Enter/Space (selectHighlighted) acts on; setPosition accepts the
+		// record and resolves the correct store index itself.
+		nav = picker.getNavigationModel && picker.getNavigationModel();
+		if (nav && nav.setPosition) {
+			nav.setPosition(record);
+		}
+
+		// Mirror ExtJS's own hover class onto the active row for a single,
+		// consistent highlight. Real mouse movement still re-points it via the
+		// native mouseover path, so pointer hover keeps working normally.
+		if (picker.highlightItem) {
+			picker.highlightItem(itemDom);
+		}
 	},
 	focusNextHeaderControl: function (cmp) {
 		var controls = this.getFocusableHeaderControls(),
@@ -1150,7 +1313,10 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			// focus into the list (and handles stores that rebuild on expand,
 			// e.g. viewChange).
 			combo.expand();
-		} else if (key === tabKey && e.shiftKey) {
+		} else if (
+			key === tabKey &&
+			combo.isExpanded &&
+			e.shiftKey) {
 			e.stopEvent();
 			this.closeHeaderComboAndFocusPrevious(combo);
 		} else if (
@@ -1159,27 +1325,24 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			combo.leankorHeaderViewCombo) {
 			e.stopEvent();
 			this.focusHeaderViewComboList(combo);
-		} else if (key === tabKey) {
-			e.stopEvent();
-			combo.leankorSkipRestoreFocus = true;
+		} else if (key === tabKey && combo.isExpanded) {
 			combo.collapse();
-			Ext.defer(function () {
-				if (!combo.destroyed) {
-					this.focusNextHeaderControl(combo);
-				}
-			}, 50, this);
 		} else if (key === escKey && combo.isExpanded) {
 			e.stopEvent();
 			combo.collapse();
 		} else if (
 			key === enterKey &&
 			combo.isExpanded &&
-			combo.reference === "viewChange") {
+			(combo.reference === "viewChange" || combo.leankorHeaderViewCombo)) {
 			// Popup is open but DOM focus may still be on the combo input
-			// (e.g. the popup was opened with the mouse). ExtJS's native Enter
-			// finds no nav-model highlight here — we move focus into the list
-			// via the DOM, not the nav model — so it would dead-end with focus
-			// stuck on the combo. Activate the focused/first option ourselves.
+			// (e.g. the popup was opened with the mouse, or focus had not yet
+			// moved into the list). ExtJS's native Enter would select the nav
+			// model's highlighted row — which can be a stale hovered option such
+			// as Print — instead of the keyboard-focused one. Activate the
+			// focused/first option ourselves so Enter always runs what the focus
+			// border shows. Covers settingCheck and any leankorHeaderViewCombo;
+			// viewChange is excluded from this binding in bindHeaderComboKeys, so
+			// its native selection is untouched.
 			e.stopEvent();
 			combo.leankorEnterSelecting = true;
 			Ext.defer(function () {
@@ -1221,7 +1384,11 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			}
 
 			if (cmp.el && cmp.el.dom) {
-				cmp.el.dom.setAttribute("aria-label", label);
+				if (cmp.inputEl && cmp.inputEl.dom) {
+					cmp.el.dom.removeAttribute("aria-label");
+				} else {
+					cmp.el.dom.setAttribute("aria-label", label);
+				}
 			}
 		},
 			this);
@@ -1249,7 +1416,7 @@ Ext.define('LeankorApp.view.ControlHeader', {
 			localeName = typeof Locale !== "undefined" && Locale.LocaleName;
 
 		if (cmp.reference === "popOut") {
-			label = (localeName && localeName.ZoomToFit) || label || "Zoom to fit";
+			label = (localeName && localeName.OpenInNewTab) || label || "Open in a new tab";
 		} else if (cmp.reference === "help") {
 			label = (localeName && localeName.Help) || label || "Help";
 		}
