@@ -166,6 +166,23 @@ Ext.define("LeankorApp.util.AccessibilityUtil", {
 				});
 
 				if (floaters.length) {
+					var openFieldBeforeClose = Ext.Array.findBy(
+						Ext.ComponentQuery.query("combobox,combo,datefield"),
+						function (field) {
+							return (
+								!field.destroyed &&
+								field.picker &&
+								Ext.isFunction(field.picker.isVisible) &&
+								field.picker.isVisible()
+							);
+						}
+					);
+					if (openFieldBeforeClose) {
+						openFieldBeforeClose.collapse();
+						e.stopPropagation();
+						return;
+					}
+
 					floaters.sort(function (a, b) {
 						var za =
 								(a.el &&
